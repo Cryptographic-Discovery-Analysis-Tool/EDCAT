@@ -21,7 +21,11 @@ DECISIONS_DIR = REPO_ROOT / "docs" / "decisions"
 
 
 def sha256_of(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    # Normalize line endings first: on Windows, git checkout may rewrite LF to
+    # CRLF (core.autocrlf) with no actual content change, which must not look
+    # like an architecture-doc edit.
+    text = path.read_text(encoding="utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def current_hashes() -> dict[str, str]:
