@@ -120,3 +120,32 @@ can currently be constructed without an uncited rule_id — which the model corr
 
 **Resolution:** get a literal rule_id for the shares-public-key rule from the same source that
 produced `IDENTITY-CERT-DER-001`, then register it in `src/ecdat/rules/registry.py`.
+
+## OI-007 — No Docker on the harness build machine; Maven and haproxy also missing (2026-09-17)
+
+**Status:** NOT blocking for the Tier A harness-scaffolding task (2026-09-17) — worked around
+where possible, recorded honestly where not.
+
+Building `ecdat-harness` Tier A (P3 task) needs Docker (for `harness/compose/docker-compose.yml`,
+the payment-gateway/edge-lb Dockerfiles) and, for the payment-gateway Java fixture, a JVM build
+tool. This machine has neither `docker` nor `mvn` on PATH, and no `haproxy` binary either.
+
+**What was actually done about it:**
+- **Maven:** downloaded Apache Maven 3.9.16 directly from `dlcdn.apache.org` into the session's
+  scratchpad (not part of either repo) and used it to build and run the real payment-gateway jar.
+  This is how `harness/eval/experiments.md`'s CFG-R1 results are real, not fabricated — but it
+  means the fixture has only been proven to build with a manually-fetched Maven, not with the
+  `maven:3.9.16-amazoncorretto-25-alpine` Docker image referenced in its own `Dockerfile` (that
+  image tag was verified to exist via the Docker Hub API, but never actually pulled or built).
+- **Docker / docker-compose:** `harness/compose/docker-compose.yml`, and both Dockerfiles, were
+  written to spec and validated only as far as `PyYAML` parsing the compose file without error.
+  Neither has been built or run. `H6`'s "internal network, no egress" and the whole
+  containerised Tier A chain (image → keystore → edge-lb TLS) are therefore **unverified** beyond
+  static review.
+- **haproxy.cfg:** transcribed from harness §5.3 verbatim plus the generated `pay-edge.pem` path;
+  never run through `haproxy -c` or an actual HAProxy process, since no binary is available here.
+
+**Resolution:** on a machine with Docker available, run `docker compose -f harness/compose/docker-compose.yml build && up`
+for the payment-gateway/edge-lb pair, confirm the internal network has no egress (H6), and confirm
+HAProxy actually terminates TLS with the `pay-edge` cert as `haproxy.cfg` intends. Until then, treat
+the containerized path as design-reviewed but not executed.
