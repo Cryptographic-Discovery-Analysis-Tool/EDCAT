@@ -5,6 +5,7 @@ description = "Evidence-correlation and PQC migration decision-support layer"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.10",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

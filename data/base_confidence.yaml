@@ -1,0 +1,38 @@
+# Base-confidence registry for Evidence.base_confidence.
+#
+# Lock §5 row 3 ("3 Findings & confidence"): "The base confidence table applies
+# to evidence items." That table would live in ECDAT_Final_Architecture.md
+# Part 3 — which is an EMPTY file in this repo (docs/open-issues.md OI-001).
+#
+# STATUS: no usable row exists. This file is deliberately NOT a table of
+# numbers. It is a registry that records what we looked for, what we found,
+# and why what we found is not usable — so the absence is data, not a silence.
+#
+# Rule for adding a row: a row may be marked `usable: true` ONLY when its
+# `citation` points at a non-empty in-repo source that states the literal
+# value. Never add a row from memory, from a slide, or by interpolating
+# between other rows. See docs/decisions/ADR-002.
+schema_version: 1
+usable_row_count: 0
+
+rows:
+  - key: binary.dynamic_symbols
+    value: 0.40
+    usable: false
+    status: APPROXIMATE_SECONDHAND
+    citation: "ecdat-harness/docs/ECDAT_Synthetic_Enterprise_Test_Harness.md §4 (directory-structure commentary)"
+    quote: "symbols -> capability/likely-use, confidence ~0.40 per Part 3"
+    why_not_usable: >-
+      The source writes "~0.40" (explicitly approximate) and defers to
+      Part 3, which is empty per OI-001. An approximation forwarded from an
+      absent document is not a citable value. TODO-VERIFY.
+
+# Searched for and NOT found (recorded so the next person does not re-search):
+#   - The ordering "certificate 0.95 ... package 0.30" that appeared on an
+#     early slide draft: grep finds 0.95 and 0.30 nowhere in this repo, nowhere
+#     in the harness docs, and in none of the four recorded fixture READMEs.
+#     It has no citable basis and must not be shipped. (The current deck no
+#     longer states it.)
+#   - Any per-source-tool confidence value in the Lock: the only two hits for
+#     "confidence" are Lock §5 row 3 and Lock §4 TOPO-001 T1, neither of which
+#     contains a number.

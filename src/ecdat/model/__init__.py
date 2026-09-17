@@ -6,7 +6,7 @@ from ecdat.model.configuration import (
     SourceKind,
 )
 from ecdat.model.epistemic import EpistemicState, Resolution, ResolutionStatus
-from ecdat.model.evidence import Evidence
+from ecdat.model.evidence import ConfidenceBasis, Evidence
 from ecdat.model.field_value import FieldValue, derive
 from ecdat.model.finding import Finding
 from ecdat.model.relationship import Assurance, EvidenceBasis, Relationship
@@ -16,6 +16,7 @@ from ecdat.model.visibility import SupportLevel, VisibilityDimension, Visibility
 __all__ = [
     "Applicability",
     "Assurance",
+    "ConfidenceBasis",
     "ConfigurationCandidate",
     "CryptoAsset",
     "EffectiveConfigurationInference",

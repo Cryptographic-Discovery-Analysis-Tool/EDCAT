@@ -85,9 +85,24 @@ row [in data/] has a citation field"). Per CLAUDE.md's anti-hallucination rule, 
 be typed from memory, so none was added. Callers (adapters, not yet built) must supply
 `base_confidence` themselves until the table exists in `data/`.
 
-**Resolution:** populate `data/` with the cited base-confidence table once Final Architecture
-Part 3 (or an equivalent decision) is supplied; wire adapters to look values up from there, never
-from a hardcoded dict in `src/`.
+**Re-scoped 2026-09-17, see [ADR-002](decisions/ADR-002-uncited-confidence-must-carry-its-own-justification.md).**
+An exhaustive grep settles the factual part: `0.95` and `0.30` — the
+"certificate 0.95 … package 0.30" ordering from an early slide draft — appear nowhere in this
+repo, nowhere in the harness docs, and in none of the four recorded fixture READMEs. That
+ordering has no citable basis and must not ship; the current deck no longer states it. The only
+numeric confidence in any canonical source is the harness's own directory commentary
+("confidence ~0.40 per Part 3"), which is explicitly approximate and forwards to the empty
+Part 3 — it is recorded in `data/base_confidence.yaml` as `usable: false`, not adopted.
+
+**Now closed:** `data/base_confidence.yaml` exists as a citation registry with
+`usable_row_count: 0`; `ecdat.data.base_confidence.lookup()` raises rather than returning a
+default; `Evidence.confidence_basis` is required, so an unexplained confidence cannot be
+constructed; tests assert the slide ordering cannot be reintroduced and that no
+`base_confidence = <number>` literal exists in `src/`.
+
+**Still open (narrowed):** supply Part 3 or an equivalent decision giving literal per-source
+values. Only then do rows flip to `usable: true` and adapters switch from `ADAPTER_DECLARED` to
+`CITED_TABLE`. No model change is needed when that happens.
 
 ## OI-005 — No canonical total order among epistemic states for R-DERIVE (2026-09-17)
 

@@ -1,0 +1,210 @@
+# ECDAT's own Semgrep rules: Java crypto call-site INVENTORY, not a linter.
+#
+# Why these exist (VERIFIED, not assumed): a pinned Semgrep 1.99.0 run with
+# --config=auto over a Java tree containing four crypto call sites returned
+# exactly ONE result -- a weak-hash warning. The three legitimate call sites
+# produced nothing, because registry rules exist to flag INSECURE crypto, not
+# to inventory crypto. Raw output is recorded under
+# tests/fixtures/recorded/semgrep/1.99.0/. Inventory is therefore ECDAT's own
+# responsibility. Owning these rules also means ECDAT ships no registry rule
+# content, so the Semgrep Rules License v1.0 (Dec 2024) does not reach it, and
+# the same file runs unchanged on Opengrep.
+#
+# Design contract:
+#  * Detect the JCA/JCE API SHAPE and capture the algorithm argument. Never
+#    trigger on a particular algorithm string -- a rule that keys on specific
+#    strings passes a fixed test set and fails a renamed one.
+#  * The literal / non-literal split is the entire epistemic payload. A literal
+#    argument is observable in source; a non-literal one is not, and must not be
+#    reported as observed. These two rule ids partition every matched call site
+#    between them: every call whose first argument is not a single string
+#    literal falls to the non-literal rule, so a call site can never silently
+#    produce no finding at all. A vanished asset is worse than an unknown one.
+#  * The rule id carries the SERVICE KIND, because these APIs do not all name an
+#    algorithm: SSLContext.getInstance takes a protocol, TrustManagerFactory a
+#    trust-management algorithm. Mapping those onto an "algorithm" field would
+#    manufacture assets that do not exist. The adapter keys off the rule id and
+#    never string-matches a service name.
+#  * No rule decides an epistemic state. metadata.ecdat.* records facts about
+#    the MATCH; the consuming adapter assigns state per FIELD.
+#
+# Engine features used: pattern-either, pattern-not, metavariable-regex. All
+# Semgrep OSS core -- no Pro, no interfile, no taint mode, no autofix.
+#
+# Note for the adapter (VERIFIED by running it): Semgrep constant-propagates, so
+# `static final String A = "AES/CBC/PKCS5Padding"; Cipher.getInstance(A)` binds
+# the literal rule with the propagated VALUE, while the matched source line
+# still reads `Cipher.getInstance(A)`. The value is statically determined but is
+# not written at the call site. The adapter can detect this by checking whether
+# the captured value occurs in the matched line, and must do so transiently --
+# the matched source line is never persisted (no secret bytes in DB, logs, CLI
+# output, CBOM or snapshots).
+
+rules:
+  # ------------------------------------------------------------------ R1
+  - id: crypto-call-literal-algorithm
+    languages: [java]
+    severity: INFO
+    message: >-
+      Crypto service called with a literal algorithm argument: $ALGO.
+      The algorithm string is observable at this call site.
+    metadata:
+      ecdat:
+        evidence_kind: source-call-site
+        service_kind: algorithm
+        algorithm_argument: literal
+        captures: [$ALGO, $CLASS]
+        note: >-
+          A literal transformation string does not fix every parameter of the
+          operation. Provider defaults can still decide parameters the string
+          does not name, so parameter fields stay UNKNOWN unless separately
+          evidenced. Purpose is never derivable from the API alone, and there
+          is no reachability analysis.
+      category: inventory
+      technology: [java]
+    patterns:
+      - pattern: $CLASS.getInstance("$ALGO", ...)
+      - metavariable-regex:
+          metavariable: $CLASS
+          regex: ^(Cipher|Mac|MessageDigest|Signature|KeyGenerator|KeyPairGenerator|SecretKeyFactory|KeyFactory|KeyAgreement|AlgorithmParameters|SecureRandom)$
+
+  # ------------------------------------------------------------------ R2
+  - id: crypto-call-nonliteral-algorithm
+    languages: [java]
+    severity: INFO
+    message: >-
+      Crypto service called with a NON-LITERAL algorithm argument: $ARG.
+      The algorithm is not observable in source and must not be reported as
+      observed; hand $ARG to configuration-chain resolution.
+    metadata:
+      ecdat:
+        evidence_kind: source-call-site
+        service_kind: algorithm
+        algorithm_argument: non-literal
+        captures: [$ARG, $CLASS]
+        note: >-
+          Exhaustive complement of crypto-call-literal-algorithm over the same
+          service set: together they cover every matched call site. Resolution
+          through the configuration chain yields INFERRED, never observed.
+      category: inventory
+      technology: [java]
+    patterns:
+      - pattern: $CLASS.getInstance($ARG, ...)
+      - metavariable-regex:
+          metavariable: $CLASS
+          regex: ^(Cipher|Mac|MessageDigest|Signature|KeyGenerator|KeyPairGenerator|SecretKeyFactory|KeyFactory|KeyAgreement|AlgorithmParameters|SecureRandom)$
+      - pattern-not: $ANY.getInstance("...", ...)
+
+  # ------------------------------------------------------------------ R3
+  - id: crypto-call-literal-protocol
+    languages: [java]
+    severity: INFO
+    message: >-
+      TLS/SSL context requested with a literal protocol argument: $PROTO.
+      This names a protocol, not an algorithm.
+    metadata:
+      ecdat:
+        evidence_kind: source-call-site
+        service_kind: protocol
+        algorithm_argument: literal
+        captures: [$PROTO]
+        note: >-
+          Kept separate from the algorithm rules so this can never populate an
+          algorithm field. A protocol version is a different claim about a
+          different field.
+      category: inventory
+      technology: [java]
+    patterns:
+      - pattern: SSLContext.getInstance("$PROTO", ...)
+
+  # ------------------------------------------------------------------ R4
+  - id: crypto-call-nonliteral-protocol
+    languages: [java]
+    severity: INFO
+    message: >-
+      TLS/SSL context requested with a NON-LITERAL protocol argument: $ARG.
+    metadata:
+      ecdat:
+        evidence_kind: source-call-site
+        service_kind: protocol
+        algorithm_argument: non-literal
+        captures: [$ARG]
+      category: inventory
+      technology: [java]
+    patterns:
+      - pattern: SSLContext.getInstance($ARG, ...)
+      - pattern-not: SSLContext.getInstance("...", ...)
+
+  # ------------------------------------------------------------------ R5
+  - id: crypto-call-literal-trust-service
+    languages: [java]
+    severity: INFO
+    message: >-
+      Key/trust manager factory requested with a literal service argument:
+      $SERVICE. This names a trust-management service, not a crypto algorithm.
+    metadata:
+      ecdat:
+        evidence_kind: source-call-site
+        service_kind: trust-service
+        algorithm_argument: literal
+        captures: [$SERVICE, $CLASS]
+      category: inventory
+      technology: [java]
+    patterns:
+      - pattern: $CLASS.getInstance("$SERVICE", ...)
+      - metavariable-regex:
+          metavariable: $CLASS
+          regex: ^(TrustManagerFactory|KeyManagerFactory|KeyStore|CertificateFactory|CertPathValidator|CertPathBuilder)$
+
+  # ------------------------------------------------------------------ R6
+  - id: crypto-call-explicit-provider-argument
+    languages: [java]
+    severity: INFO
+    message: >-
+      Crypto service pins an explicit provider argument: $PROVIDER.
+    metadata:
+      ecdat:
+        evidence_kind: source-call-site-provider
+        provider_argument: literal
+        captures: [$PROVIDER, $CLASS]
+        note: >-
+          Intentionally overlaps the algorithm and protocol rules on the same
+          call site: it is additive evidence about the provider field, not a
+          second call site. The adapter correlates by (path, line, column) and
+          must not emit a second finding for it. Whether a pinned provider is
+          the one that actually executes is a separate question this rule does
+          not answer.
+      category: inventory
+      technology: [java]
+    patterns:
+      - pattern: $CLASS.getInstance($ALGO, "$PROVIDER")
+      - metavariable-regex:
+          metavariable: $CLASS
+          regex: ^(Cipher|Mac|MessageDigest|Signature|KeyGenerator|KeyPairGenerator|SecretKeyFactory|KeyFactory|KeyAgreement|SSLContext|TrustManagerFactory|KeyManagerFactory)$
+
+  # ------------------------------------------------------------------ R7
+  - id: crypto-config-property-binding-declaration
+    languages: [java]
+    severity: INFO
+    message: >-
+      Externalised configuration binding declared with prefix $PREFIX.
+      Candidate link from a non-literal algorithm argument to config.
+    metadata:
+      ecdat:
+        evidence_kind: config-binding-declaration
+        captures: [$PREFIX]
+        note: >-
+          Not a crypto asset and never emitted as one. It only supplies a
+          candidate link between a non-literal call site and externalised
+          configuration; resolving that link is the configuration adapter's
+          job, and a resolved value is INFERRED, never observed.
+      category: inventory
+      technology: [java, spring]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @ConfigurationProperties(prefix = $PREFIX)
+              class $C { ... }
+          - pattern: |
+              @org.springframework.boot.context.properties.ConfigurationProperties(prefix = $PREFIX)
+              class $C { ... }
