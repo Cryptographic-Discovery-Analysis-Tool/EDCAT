@@ -1,0 +1,20 @@
+$ trivy fs --scanners vuln,secret,misconfig --format json --output pg.json targets/payments/payment-gateway
+
+(command: 2026-09-17, trivy 0.74.0, run inside WSL Ubuntu against the Windows
+checkout via /mnt/c/...)
+
+2026-09-17T08:27:13+01:00	INFO	[vuln] Vulnerability scanning is enabled
+2026-09-17T08:27:13+01:00	INFO	[misconfig] Misconfiguration scanning is enabled
+2026-09-17T08:27:13+01:00	INFO	[secret] Secret scanning is enabled
+2026-09-17T08:27:17+01:00	FATAL	Error	remote Maven repository returned 429 Too Many Requests for https://repo.maven.apache.org/maven2/org/springframework/data/spring-data-bom/2026.0.1/spring-data-bom-2026.0.1.pom. Retry-After: 1800.
+The repository blocks all subsequent requests from this IP until the block clears.
+To avoid this, populate the local Maven cache before scanning (e.g. run `mvn dependency:resolve` and cache ~/.m2 in CI).
+
+exit status: non-zero (FATAL). No pg.json was produced by this invocation.
+
+See tests/fixtures/recorded/trivy/0.74.0/README.md item 1 and
+docs/experiments.md's "E1 (supplemental)" entry for the adapter-design
+implication: trivy's `fs` mode resolves a Maven pom.xml's effective
+dependency tree LIVE against Maven Central, which would fail identically
+inside the harness's declared no-egress internal network (H6,
+harness/compose/docker-compose.yml).

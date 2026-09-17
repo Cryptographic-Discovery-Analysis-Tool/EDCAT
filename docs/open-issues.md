@@ -149,3 +149,65 @@ tool. This machine has neither `docker` nor `mvn` on PATH, and no `haproxy` bina
 for the payment-gateway/edge-lb pair, confirm the internal network has no egress (H6), and confirm
 HAProxy actually terminates TLS with the `pay-edge` cert as `haproxy.cfg` intends. Until then, treat
 the containerized path as design-reviewed but not executed.
+
+## OI-008 — Lock §6's E1/E3/E4/TOPO-X2 have no qualifying Tier A test material (2026-09-17)
+
+**Status:** NOT fully blocking — the 2026-09-17 task ("run pinned semgrep, sslyze, trivy, openssl
+against Tier A targets; record E1–E4 and TOPO-X1–X3") was executed for the parts that genuinely
+overlap Tier A (TOPO-X1, TOPO-X3, and supplemental trivy/semgrep/openssl runs against real Tier A
+artifacts — see `docs/experiments.md`). The parts that don't overlap are recorded here rather than
+faked with substitute material relabelled as "Tier A."
+
+Lock §6's own E1–E4/TOPO-X1–X3 experiment definitions each name specific test material:
+
+| ID | Needs | Exists in Tier A? |
+|---|---|---|
+| E1 | a stripped Go binary | **No.** Tier A = payment-gateway + edge-lb + PKI + one trap + no-crypto control (harness §3/§13, confirmed against ground-truth: every `PAY-00X`/`INF-00X` asset with `tier: A` is `application: payment-gateway` or `application: edge-lb`/`pki`; none is Go). The harness's only Go target, `targets/research/datalake-sync`, is domain `research`, not Tier A. No Go toolchain exists on this machine either (`go` not on PATH) — even a non-Tier-A stripped Go binary couldn't be built here. |
+| E2 | YARA | N/A to this task — YARA isn't one of the four tools this task named (semgrep, sslyze, trivy, openssl). Not attempted, not a Tier A gap per se. |
+| E3 | a TLS endpoint that negotiates a **hybrid PQ group** | **No.** The only hybrid-group-capable target in the harness is `targets/infrastructure/pqc-edge` (`nginx.conf`) — domain `infrastructure`, Tier B (harness §3: "PQC edge" is explicitly listed under Tier B, not Tier A). Tier A's `edge-lb` (`haproxy.cfg`) offers only classical ciphers (`ECDHE-ECDSA-AES128-GCM-SHA256`, `ECDHE-RSA-AES256-GCM-SHA384`). |
+| E4 | a **weak certificate** (Lock's own framing: "seclevel on weak certificates") | **No.** Tier A's PKI (harness §6) is deliberately strong throughout: RSA-4096 root, ECDSA P-384 intermediate, ECDSA P-256 / RSA-2048 leaves. The harness's one deliberately-weak-crypto payments target, `settlement-batch` (DES-EDE3-CBC, RSA-1024 — harness §4 directory listing), is not tagged `tier: A` in any ground-truth asset and is absent from harness §13's explicit Tier A build list. |
+| TOPO-X2 | BuildKit attestation retrieval | **No Docker on this machine** — already tracked as [OI-007](#oi-007--no-docker-on-the-harness-build-machine-maven-and-haproxy-also-missing-2026-09-17); BuildKit attestations require an actual `docker buildx build` run, which needs Docker regardless of tier scope. |
+
+**What was done instead, and where it's recorded (`docs/experiments.md`):**
+- E1: ran trivy against Tier A's actual payment-gateway fat jar (found trivy's `fs` mode can't see
+  inside a standalone jar at all, `rootfs` mode can — real adapter-design evidence) and against
+  `no-crypto-service`. Filed as `e1_supplemental_*`, explicitly not claimed as E1.
+- E4: ran openssl seclevel mechanics against Tier A's real (strong) certs — showed `@SECLEVEL=4`
+  rejects the P-256 ciphersuite locally before any handshake. Real evidence, but not "seclevel
+  catching a weak cert," because there is no weak cert in Tier A.
+- E3, E2, TOPO-X2: not attempted at all; no substitute material was fabricated for these.
+
+**Why this wasn't fabricated instead:** CLAUDE.md's anti-hallucination rules and "false certainty
+is the worst possible bug" — inventing a weak cert or a Go binary and filing it as "Tier A's E1/E4
+result" would misrepresent what Tier A actually contains, and would corrupt any later comparison
+against harness ground truth (which is scoped strictly by `tier: A` tags).
+
+**Resolution:** E1 needs either (a) a Go toolchain on a build machine plus explicit sign-off to
+test against `datalake-sync` (Tier B, out of this task's stated Tier A scope) or a purpose-built
+Go binary, whichever the project lead prefers, or (b) the harness formally adding a Go binary to
+Tier A (a Lock/harness-doc change, not something this task should do unilaterally, per CLAUDE.md
+"don't widen scope"). E3 needs the harness to actually deploy `pqc-edge` (Tier B) and re-scope, or
+an explicit decision that Tier A's classical edge-lb is an acceptable E3 substitute. E4 needs
+`settlement-batch`'s weak certs, if it plants any (currently the file `src/settle.c` exists but was
+not inspected for this task, which stayed in scope). TOPO-X2 needs Docker (OI-007's resolution).
+
+## OI-009 — semgrep does not install on native Windows Python (2026-09-17)
+
+**Status:** NOT blocking — worked around, recorded honestly.
+
+`pip install semgrep==1.99.0` on this machine's native Windows Python
+(`C:\Python314`) fails during the build step with `Exception: Semgrep does not
+support Windows yet, please try again with WSL` (semgrep's own `setup.py`,
+referencing semgrep issue #1330). This is a semgrep-project limitation, not
+specific to this pin.
+
+**What was done:** installed and ran semgrep 1.99.0 inside this machine's
+existing WSL Ubuntu distribution instead (`wsl` was already configured on this
+machine — `wsl --status` shows `Default Distribution: Ubuntu, Default Version:
+2` — nothing new was installed at the OS level to work around this). The
+WSL filesystem accesses the Windows repo checkout via `/mnt/c/...`.
+
+**Resolution:** if a future adapter needs semgrep as a subprocess dependency
+on a Windows dev machine, it must either shell out to WSL explicitly or the
+project must standardize development on Linux/macOS/WSL for anything that
+touches semgrep. Not an architecture decision — a tooling/environment note.

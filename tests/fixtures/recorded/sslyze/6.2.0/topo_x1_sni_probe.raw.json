@@ -1,0 +1,22 @@
+{
+  "server_location": {
+    "hostname": "pay-edge",
+    "ip_address": "127.0.0.1",
+    "port": 8443
+  },
+  "connectivity_result": {
+    "hostname_used_for_server_name_indication": "DISABLED"
+  },
+  "scan_status": "ServerScanStatusEnum.COMPLETED",
+  "sni_sent": "pay-edge",
+  "certificate_deployments_found": [
+    {
+      "leaf_subject": "CN=pay-edge,O=Harness Payments",
+      "leaf_san_dns": [
+        "<SubjectAlternativeName(<GeneralNames([<DNSName(value='pay-edge')>])>)>"
+      ],
+      "verified_chain_has_sha1_signature": null,
+      "received_chain_has_valid_order": true
+    }
+  ]
+}

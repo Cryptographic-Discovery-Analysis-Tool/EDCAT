@@ -1,0 +1,36 @@
+$ openssl x509 -in pay-edge.pem.crt -outform DER | sha256sum
+8a86ce9994efda613354233f9e7951a7bc193038f96265f596ce61292608ec72 *-
+$ sha256sum pay-edge.der.crt
+8a86ce9994efda613354233f9e7951a7bc193038f96265f596ce61292608ec72 *pay-edge.der.crt
+
+$ openssl pkcs12 -in gateway.p12 -clcerts -nokeys -passin pass:changeit -out gateway-from-p12.pem.crt
+$ sha256sum gateway-from-p12.pem.crt
+a98c76f0ef880829f8c8eaf29f25bc8eef5f896c77961c451dc6db1ff8f39eb5 *gateway-from-p12.pem.crt
+   -- NOTE: this raw PEM-text hash does NOT match the original cert.pem's PEM
+      hash, because openssl pkcs12 -clcerts prepends "Bag Attributes"/
+      "subject="/"issuer=" comment lines before the PEM block. This is the
+      exact non-canonical-PEM trap Lock sec.6 TOPO-X3 / harness T6 warns about:
+      hashing the raw PEM bytes as extracted is NOT reliable identity.
+
+$ diff <(openssl x509 -in ../../../../../../../ecdat-harness/harness/build/out/gateway-p12/cert.pem) gateway-from-p12.pem.crt
+0a1,5
+> Bag Attributes
+>     localKeyID: CD 4A C4 A6 28 53 B8 65 6E 9D 2F 8A E3 AE 8E F0 37 42 19 5D
+>     friendlyName: payment-gateway
+> subject=O=Harness Payments, CN=payment-gateway
+> issuer=O=Harness Intermediate CA (ECC), CN=Harness Intermediate CA ECC
+
+$ sha256sum gateway-from-p12.der.crt
+7c93c6a1fcf48e98b1bb1cc6ee177e7c0fa046cd34a405c8449710c73cb62998 *gateway-from-p12.der.crt
+$ openssl x509 -in <original cert.pem> -outform DER | sha256sum
+7c93c6a1fcf48e98b1bb1cc6ee177e7c0fa046cd34a405c8449710c73cb62998 *-
+
+CONCLUSION: once every encoding is canonicalized to DER via `openssl x509
+-outform DER` (running the PKCS12-extracted cert back through the x509
+command strips the Bag Attributes header and re-emits pure DER-then-PEM),
+SHA-256 over the DER bytes is identical across the PEM source file, the
+independently-produced DER file, and the cert extracted from the PKCS12
+keystore. It is NOT identical if you hash the raw text openssl pkcs12
+emits directly, because that text is not canonical PEM (comment lines are
+part of the file). This supports Lock sec.15.2 T6's "canonicalised first"
+qualifier -- canonicalization is not a formality, it's load-bearing.
