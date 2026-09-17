@@ -1,0 +1,21 @@
+# Control fixture: both openssl_conf/[openssl_init] and nodejs_conf/[nodejs_init]
+# are valid, working provider activations (default provider only, no bogus
+# module). Used to confirm that --openssl-shared-config itself does not crash
+# Node when the config it switches to is actually valid -- isolating the
+# PRV-T3 crash to "Node read the broken [openssl_init] section", not to
+# "--openssl-shared-config is broken on this build".
+
+openssl_conf = openssl_init
+nodejs_conf = nodejs_init
+
+[openssl_init]
+providers = good_providers
+
+[nodejs_init]
+providers = good_providers
+
+[good_providers]
+default = default_sect
+
+[default_sect]
+activate = 1

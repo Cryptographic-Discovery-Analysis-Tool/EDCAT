@@ -1,0 +1,34 @@
+# PRV-T3 test fixture (Lock section 6, harness section 16.3 #3 / harness section
+# 16.1 "Node.js (>= 18.5) reads the nodejs_conf section, not openssl_conf, unless
+# --openssl-shared-config").
+#
+# The [openssl_init] section (reached via app-name "openssl_conf", OpenSSL's
+# default app name) activates a provider with a module path that cannot exist,
+# which OpenSSL fails hard on. The [nodejs_init] section (reached via app-name
+# "nodejs_conf", Node's default app name) activates a real, working provider
+# config with no such defect.
+#
+# If a process reads openssl_conf/[openssl_init] it must error. If it reads
+# nodejs_conf/[nodejs_init] it must succeed.
+
+openssl_conf = openssl_init
+nodejs_conf = nodejs_init
+
+[openssl_init]
+providers = broken_providers
+
+[broken_providers]
+bogus = bogus_sect
+
+[bogus_sect]
+activate = 1
+module = /this/path/does/not/exist.so
+
+[nodejs_init]
+providers = good_providers
+
+[good_providers]
+default = default_sect
+
+[default_sect]
+activate = 1

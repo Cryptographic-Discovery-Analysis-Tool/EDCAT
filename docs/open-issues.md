@@ -26,3 +26,24 @@ this entry stays open until the real source text for both docs is supplied.
 **Resolution:** user must provide the actual source files for `ECDAT_Architecture_Stress-Test_Directives.md`
 and `ECDAT_Final_Architecture.md`, or confirm the Lock is the sole surviving canonical doc and the
 other two should be removed from the precedence list in CLAUDE.md.
+
+## OI-002 — No harness-pinned JDK/BC/Node/OpenSSL build exists yet (2026-09-17)
+
+**Status:** NOT blocking for the PRV-T1/T2/T3 evidence-gate experiments (2026-09-17 task), because
+Lock §6.1 explicitly says these preliminary observations "do not satisfy the gate" for exactly this
+reason and asks for them anyway. Blocking for ever calling PRV-001 LOCKED (harness §16.3 freeze gate
+requires "the pinned JDK build", and harness §16.2 says "the harness pins one JDK build").
+
+Lock §6.1: "the harness has not yet chosen its pinned JDK build (no payment-gateway image exists)."
+No `ecdat-harness/targets/payments/payment-gateway` image, Dockerfile pin, or `harness/build/pki-lock.generated.json`
+exists in the ecdat-harness repo as of this entry — confirmed by inspecting the repo tree.
+
+**What this means for docs/experiments.md EXP-002/003/004 (PRV-T1/T2/T3):** those experiments ran
+against whatever JDK/Node/OpenSSL/BC build happened to be installed on the machine that ran them
+(recorded exactly, with full version strings, in each entry) — not against a harness-sanctioned pin.
+Per Lock §6.1's own classification, this makes them **preliminary observations, not gate results**,
+even though the commands and revised-test list match harness §16.1 "Revised tests" 1–3 exactly.
+
+**Resolution:** once the harness builds the payment-gateway image and pins a JDK build (harness
+build order, Lock §9 step 1), re-run PRV-T1/T2/T3 against that exact pinned build and record the
+result as a gate result (not preliminary) in docs/experiments.md, citing the image digest.
