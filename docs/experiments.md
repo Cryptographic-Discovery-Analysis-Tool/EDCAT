@@ -333,3 +333,74 @@ not appear in the E1–E4/TOPO-X1–X3 table; the table's only source-level tool
 mentioned anywhere is trivy/sslyze/openssl/YARA). It was run because this
 task's instructions named it explicitly. Recorded as supplemental
 adapter-design evidence, not as satisfying any lettered/numbered gate item.
+
+---
+
+## Vertical slice, source surface — first scored run (2026-09-17)
+
+The first ECDAT output ever fed to the harness scorer. Everything before this
+entry measured *tools*; this measures *ECDAT*.
+
+**Build:** P0 + P1 (`rules/semgrep/crypto-inventory-java.yaml`,
+`src/ecdat/adapters/source/semgrep.py`, `src/ecdat/cli.py`), pinned Semgrep
+1.99.0, raw output recorded under
+`tests/fixtures/recorded/semgrep/1.99.0/ecdat-rules/`.
+
+**Commands:**
+```bash
+# 1. produce the run document (ECDAT never sees ground truth)
+python -m ecdat.cli scan --adapter source-semgrep \
+  --input tests/fixtures/recorded/semgrep/1.99.0/ecdat-rules/tier-a-java.raw.json \
+  --target-id payment-gateway-source --confidence 0.5 \
+  --confidence-justification "<why this value>" --out out/run-tier-a-source.json
+
+# 2. score it against planted truth (join lives in the harness)
+python harness/eval/score_run.py <path-to>/run-tier-a-source.json
+```
+
+**Raw result:**
+```
+false-certainty rate : 0.0  (0 of 8 eligible fields)
+per-surface recall   :
+    source         4/4  = 1.0
+under-claiming rate  : 0.0  (0 of 2 fields expected KNOWN)
+files examined       : 6
+visibility           : [source] 6 file(s) examined, 5 call site(s) inventoried
+unmatched findings   : 1 (not a planted asset; judge each)
+    CryptoProperties.java: {'config_binding_prefix': 'pay.keywrap'}
+metric self-check     : an all-KNOWN copy of this run scores 8/8 (rate 1.0)
+```
+
+**What these numbers do and do not mean.**
+
+- **False-certainty 0/8 is the headline metric** (harness §8.2, target 0). The
+  eight eligible fields are the ones where claiming direct observation would be
+  an over-claim: `algorithm`/`purpose`/`reachable` on PAY-001,
+  `purpose`/`reachable` on PAY-002 and PAY-003, and `reachable` on TRAP-01.
+  None was reported KNOWN.
+- **The metric can fail, and we check that every run.** `score_run.py`
+  re-scores an all-KNOWN copy of the same run: it scores 8/8. Without that
+  check a broken join would also report 0 and look like success.
+- **Under-claiming 0/2 is why the first number is meaningful.** A tool that
+  answered UNKNOWN to everything would score a perfect false-certainty rate and
+  be useless. Both literal call sites (PAY-002, PAY-003) were reported KNOWN
+  with the right value, so the 0 is not bought with silence.
+- **Recall 4/4 is on the source surface only**, and on Tier A only. It is not a
+  global recall figure and must never be quoted as one (Directive 3: never one
+  global number). Surfaces with no adapter yet score nothing at all, which is
+  the honest representation of their state.
+- **The unmatched finding is correct, not a false positive.** `CryptoProperties.java`
+  carries a configuration-binding declaration, not a crypto call site. It claims
+  no algorithm and is not a crypto asset; it exists so the configuration adapter
+  can later join the unresolved call site to its property. It is reported
+  separately rather than silently dropped or silently counted.
+
+**Caveat on the join:** findings are matched to planted assets by source file,
+not by line range. The line ranges recorded in ground truth were written against
+an earlier revision of those files (PAY-001 records lines 1-22; the call site is
+now at line 25), so a line-level join would score a correct finding as a miss.
+File-level is right for Tier A, where one planted source asset occupies one file.
+
+**Not measured here:** every other surface (config, certs, TLS, dependencies,
+binaries), asset resolution, relationships, quantum tier, Mosca, recommendations
+and CBOM. Those have no adapter yet; see `docs/build-plan.md` P3-P8.
