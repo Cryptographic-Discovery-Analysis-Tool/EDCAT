@@ -166,3 +166,28 @@ claim finally gets tested by the forbidden-edge gate. P7–P8 complete the deck'
 Out of scope for all phases (Lock §4, unchanged): per-language semantic analysers, runtime
 instrumentation, mainframe/COBOL, Windows registry, FIPS certification judgements, HSM PKCS#11
 reader (OQ-2 default — revisit only after P9), Ghidra/deep RE.
+
+---
+
+## Progress (updated 2026-09-17)
+
+| Phase | State | Evidence |
+|---|---|---|
+| P0 — unblock | **done** | `data/base_confidence.yaml` (OI-004 closed as re-scoped, ADR-002), `rules/semgrep/crypto-inventory-java.yaml`, `adapters/base.py` (ADR-003, DEV-001). 94 tests. |
+| P1 — source adapter | **done** | `adapters/source/semgrep.py`; 26 ground-truth tests; fixtures recorded under `tests/fixtures/recorded/semgrep/1.99.0/ecdat-rules/`. 120 tests. |
+| P2 — store + score wiring | **done (in-memory)** | `cli.py` emits a run document; `harness/eval/score_run.py` scores it. First numbers in `docs/experiments.md`. A persistent store is not yet built — not needed for a number, and Lock §5 row 9 leaves the table layout open. |
+| P3 — config adapter (CFG-001) | next | `model/configuration.py` already exists; CFG-R1 already validated the answer key with 7 real JVM launches. |
+| P4–P8 | not started | — |
+
+**Measured so far** (source surface, Tier A): false-certainty **0/8**, source
+recall **4/4**, under-claiming **0/2**, all-KNOWN control **8/8**. Recall is per
+surface and Tier A only; surfaces with no adapter score nothing, which is the
+honest representation of their state.
+
+**What P3 should carry over from P1.** The source adapter deliberately leaves
+PAY-001's algorithm UNKNOWN with an UNRESOLVED resolution and keeps the argument
+expression (`props.getTransformation()`), and separately reports the
+configuration-binding declaration and its prefix (`pay.keywrap`). Those two
+findings are the input the configuration adapter joins: call site → binding →
+`application.yml` → profile yml → deployment override. The join is the work; both
+ends already exist and are tested.
