@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  guard-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Architecture docs must not change without an ADR
+        run: python tools/ci/check_architecture_hashes.py
+
+      - name: No harness identifiers in src/ or rules/
+        run: python tools/ci/check_no_harness_identifiers.py
