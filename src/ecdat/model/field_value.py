@@ -9,15 +9,28 @@ from typing import Generic, Sequence, TypeVar
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from ecdat.model.epistemic import EpistemicState, derivation_strength
+from ecdat.model.epistemic import EpistemicState, Resolution, derivation_strength
 from ecdat.rules.registry import is_registered
 
 T = TypeVar("T")
 
 
 class FieldValue(BaseModel, Generic[T]):
+    """One field's value, what we know about it, and how resolved it is.
+
+    `state` and `resolution` are deliberately separate fields (harness §14 A4:
+    "Epistemic state vs resolution status are different fields"), and both are
+    per field rather than per asset -- which is what lets one field be
+    CONFLICTING while its siblings stay INFERRED.
+
+    `resolution` is optional because most fields are simply observed or not;
+    it carries meaning only where something was looked up and could fail to
+    resolve, and an UNRESOLVED resolution always carries its reason.
+    """
+
     value: T | None = None
     state: EpistemicState
+    resolution: Resolution | None = None
     evidence_refs: tuple[str, ...] = ()
     derived_from: tuple[str, ...] = ()
     rule_id: str | None = None
