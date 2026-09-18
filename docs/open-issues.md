@@ -2,7 +2,12 @@
 
 ## OI-001 — Two of three canonical architecture docs are empty (2026-09-17)
 
-**Status:** BLOCKING for any task that needs their content. NOT blocking for repo-skeleton/CI/tooling work.
+**Status:** CLOSED (2026-09-18). See [ADR-004](decisions/ADR-004-supply-the-missing-canonical-architecture-docs.md).
+The user supplied both source files; they are copied verbatim into
+`docs/architecture/`, and `HASHES.lock` is regenerated. Text below is kept as
+the historical record of why this was blocking.
+
+**Status (as of 2026-09-17):** BLOCKING for any task that needs their content. NOT blocking for repo-skeleton/CI/tooling work.
 
 CLAUDE.md's canonical-sources precedence order lists:
 1. `docs/architecture/ECDAT_Architecture_Lock.md` — present, real content (16,618 bytes).
@@ -71,6 +76,35 @@ work, out of scope here); the model layer only carries the field.
 **Resolution:** confirm or correct `scope_anchor`'s intended shape once Directive 3 /
 Final Architecture Part 1 is supplied.
 
+**Re-read against Part 5 (2026-09-18).** Final Architecture Part 5 ("Asset resolution
+(deliberately constrained)") turns out to be the load-bearing section, not Part 1.
+It says, verbatim:
+
+> "Canonical asset key = `(algorithm_family, parameters, purpose, scope_anchor)` where
+> **scope_anchor is per-surface**: repo path, image + layer digest, host:port, or
+> binary path."
+
+This materially answers the open question. `scope_anchor` is not a declared-scope
+domain identifier like `"payments"` (the harness §15.2 T5 `cmdb_scope` concept the
+model layer's field was grounded in as an ASSUMPTION) — it is a **per-surface
+locator used as part of the within-surface dedup key**: a repo path for source
+findings, an `image:layer-digest` pair for image findings, a `host:port` for
+network/TLS findings, a binary path for binary findings. Part 5 also states the
+merge rule this key exists for: "Within a surface: merge aggressively... Across
+surfaces: do not merge. Emit explicit relationship edges instead."
+
+Part 1 ("Targets") does not define `scope_anchor` at all; it only lists the six
+surfaces (source, libraries/dependencies, container images, certificates, TLS/network
+endpoints, binaries), which is consistent with treating those six as the
+`scope_anchor` value spaces Part 5 lists.
+
+**Still open:** the currently-implemented `CryptoAsset.scope_anchor: str | None` is a
+generic opaque string, not typed per-surface, and nothing in the model layer enforces
+"repo path for source, image+digest for image, host:port for network, binary path for
+binary" or drives within-surface-only merge from it. That is a real implementation
+gap this ADR does not close — it is P6 (correlation / asset resolution) work,
+tracked in `docs/build-plan.md`, not a model-layer fix. No code change is made here.
+
 ## OI-004 — Evidence `base_confidence` has no populated source table (2026-09-17)
 
 **Status:** NOT blocking — `Evidence.base_confidence` is modelled as a plain `float` in `[0, 1]`,
@@ -104,6 +138,45 @@ constructed; tests assert the slide ordering cannot be reintroduced and that no
 values. Only then do rows flip to `usable: true` and adapters switch from `ADAPTER_DECLARED` to
 `CITED_TABLE`. No model change is needed when that happens.
 
+**Re-read against Part 3 (2026-09-18).** Final Architecture Part 3 ("Normalisation into
+Findings + Evidence") is now supplied and does contain a per-source confidence table.
+Verbatim:
+
+| Evidence source | Base confidence | Why |
+|---|---|---|
+| Parsed certificate / keystore | ~0.95 | The algorithm is literally encoded in the artefact |
+| TLS observation on the wire | ~0.90 | Directly observed in a live handshake |
+| YARA crypto constant in binary | ~0.70 | Strong signal, but file-level and no usage context |
+| Semgrep literal match | ~0.60 | Pattern matched; may be dead code, test code, or overridden |
+| Binary symbol / string | ~0.40 | Presence, not use |
+| Trivy package present | ~0.30 | Capability only |
+
+Two things narrow how this table may actually be used, both stated by Part 3 itself,
+directly above the table: it is introduced as a correction to "the earlier
+beginner-facing draft labelled a Semgrep hit 'HIGH' — that is backwards", i.e. Part 3
+is presenting **relative ordering with example values**, not a certified benchmark.
+The row values are prefixed `~` (approximate) in the source, and Part 3's own closing
+caveat says: "There is no published FP/FN benchmark for PQC *inventory* detection
+specifically... Measure your own numbers on your demo corpus."
+
+This is exactly the "certificate 0.95 … package 0.30" ordering ADR-002 searched for and
+found nowhere in-repo — it was never fabricated, it simply lived in the one canonical
+file (Part 3) that was empty at the time. The ADR-002 test asserting this ordering
+"cannot be reintroduced" was correct given what existed then and must be revisited now
+that a citable source for it exists.
+
+**Resolution, updated:** `data/base_confidence.yaml` may now add these six rows with
+`usable: true` and `citation: "ECDAT_Final_Architecture.md Part 3"`, each carrying
+Part 3's own "engineering estimate; no published benchmark" framing verbatim in its
+justification (CLAUDE.md amendment, "Rows sourced from Final Architecture Part 3 are
+cited as 'engineering estimate, Part 3; no published benchmark' — usable, labelled").
+The `source-semgrep` adapter's row is `~0.60` under this table, not the `0.5` placeholder
+it currently ships with. **This is a code and data change (updating
+`data/base_confidence.yaml`, flipping the semgrep adapter to `CITED_TABLE`, and
+updating the ADR-002 regression test's fixture ordering) and is intentionally not done
+in this task**, which is documentation-only per the user's instruction. Filed here so
+it is the next concrete step, not lost.
+
 ## OI-005 — No canonical total order among epistemic states for R-DERIVE (2026-09-17)
 
 **Status:** NOT blocking — implemented as an explicit, documented engineering decision
@@ -121,6 +194,26 @@ the property tests in `tests/unit/test_field_value.py` check that it does).
 
 **Resolution:** if Directive doc content later gives an explicit ordering, reconcile ADR-001
 against it and update `derivation_strength()` accordingly.
+
+**Re-read against Part 3 and Part 5 (2026-09-18).** Neither section addresses this.
+Part 3 ("Normalisation into Findings + Evidence") discusses *confidence* (a float,
+Part 3's own table — see [OI-004](#oi-004--evidence-base_confidence-has-no-populated-source-table-2026-09-17))
+which is a different axis from *epistemic state* (the closed KNOWN/UNKNOWN/etc. enum)
+and never mentions the enum or an ordering over it. Part 5 ("Asset resolution") is
+about merge keys and cross-surface relationships (see [OI-003](#oi-003--cryptoassetscope_anchor-has-no-canonical-definition-2026-09-17))
+and likewise never touches epistemic state ordering.
+
+The only place the epistemic enum itself is discussed in either newly-supplied
+document is the Stress-Test Directives, Directive 2 ("Make epistemic state
+first-class"), which lists the same seven states CLAUDE.md's closed enum already
+has and says "Do not represent epistemically important unknowns merely as NULL" —
+it restates the *existence* of the closed enum, matching what is already
+implemented, but gives no total order across it and does not mention R-DERIVE or
+"weakest input" by name anywhere in its 196 lines.
+
+**Still open, unchanged.** ADR-001's chosen order is neither contradicted nor
+confirmed by either newly-supplied document. This entry stays open exactly as
+before; no code change is made here.
 
 ## OI-006 — `shares-public-key` identity rule has no literal rule_id (2026-09-17)
 
