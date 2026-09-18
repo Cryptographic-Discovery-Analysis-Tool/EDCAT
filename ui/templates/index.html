@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ECDAT — demo console</title>
+<style>
+  :root {
+    --known: #1a7f37; --inferred: #9a6700; --declared: #6639ba;
+    --unknown: #57606a; --not-observed: #8c959f; --not-applicable: #8c959f;
+    --conflicting: #cf222e; --bg: #f6f8fa; --border: #d0d7de;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Helvetica, Arial, sans-serif;
+         margin: 0; background: var(--bg); color: #1f2328; }
+  header { background: #0d1117; color: #fff; padding: 1rem 1.5rem; }
+  header h1 { margin: 0; font-size: 1.2rem; }
+  header p { margin: .25rem 0 0; color: #8c959f; font-size: .85rem; }
+  main { max-width: 1100px; margin: 1.5rem auto; padding: 0 1rem; }
+  .card { background: #fff; border: 1px solid var(--border); border-radius: 8px;
+          padding: 1.25rem; margin-bottom: 1.25rem; }
+  .card h2 { margin-top: 0; font-size: 1rem; }
+  label { display: block; font-size: .85rem; font-weight: 600; margin: .75rem 0 .25rem; }
+  select, input[type=text], input[type=number] {
+    width: 100%; padding: .5rem; border: 1px solid var(--border); border-radius: 6px;
+    font-size: .9rem;
+  }
+  .row { display: flex; gap: 1rem; }
+  .row > div { flex: 1; }
+  button {
+    margin-top: 1rem; background: #1f6feb; color: #fff; border: none;
+    padding: .6rem 1.2rem; border-radius: 6px; font-size: .9rem; cursor: pointer;
+  }
+  button:hover { background: #1a5fd0; }
+  .checkbox-row { display: flex; align-items: center; gap: .5rem; margin-top: .75rem; }
+  .checkbox-row input { width: auto; }
+  .stat-grid { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .stat { flex: 1; min-width: 160px; background: var(--bg); border: 1px solid var(--border);
+          border-radius: 6px; padding: .75rem 1rem; }
+  .stat .value { font-size: 1.6rem; font-weight: 700; }
+  .stat .label { font-size: .75rem; color: #57606a; text-transform: uppercase; }
+  .stat.good .value { color: var(--known); }
+  .stat.bad .value { color: var(--conflicting); }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--border); }
+  th { background: var(--bg); font-size: .75rem; text-transform: uppercase; color: #57606a; }
+  .badge {
+    display: inline-block; padding: .1rem .5rem; border-radius: 999px;
+    font-size: .72rem; font-weight: 700; color: #fff;
+  }
+  .badge.KNOWN { background: var(--known); }
+  .badge.INFERRED { background: var(--inferred); }
+  .badge.DECLARED { background: var(--declared); }
+  .badge.UNKNOWN { background: var(--unknown); }
+  .badge.NOT_OBSERVED, .badge.NOT_APPLICABLE { background: var(--not-observed); }
+  .badge.CONFLICTING { background: var(--conflicting); }
+  .finding-block { margin-bottom: 1rem; border: 1px solid var(--border); border-radius: 6px; }
+  .finding-block > summary { padding: .5rem .75rem; cursor: pointer; font-size: .85rem;
+                             background: var(--bg); font-weight: 600; }
+  code { background: var(--bg); padding: .1rem .35rem; border-radius: 4px; font-size: .85em; }
+  pre { background: #0d1117; color: #c9d1d9; padding: 1rem; border-radius: 6px;
+        overflow-x: auto; font-size: .8rem; max-height: 500px; }
+  .warn { color: var(--conflicting); font-size: .85rem; }
+  .muted { color: #57606a; font-size: .8rem; }
+  .offender { color: var(--conflicting); }
+</style>
+</head>
+<body>
+<header>
+  <h1>ECDAT — demo console</h1>
+  <p>Runs an adapter over a recorded tool output and, optionally, scores it against Tier A ground truth. No detection logic lives here — this calls the same code path as the CLI.</p>
+</header>
+<main>
+
+  <div class="card">
+    <h2>Run a scan</h2>
+    <form method="post" action="/scan">
+      <div class="row">
+        <div>
+          <label for="adapter">Adapter</label>
+          <select name="adapter" id="adapter">
+            {% for a in adapters %}
+            <option value="{{ a }}" {% if result and result.form.adapter == a %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="input_path">Recorded input</label>
+          <select name="input_path" id="input_path">
+            {% for i in inputs %}
+            <option value="{{ i.path }}" {% if result and result.form.input_path == i.path %}selected{% endif %}>{{ i.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="target_id">Target id</label>
+          <input type="text" name="target_id" id="target_id"
+                 value="{{ result.form.target_id if result else 'payment-gateway-source' }}">
+        </div>
+        <div>
+          <label for="confidence">Base confidence</label>
+          <input type="number" step="0.01" min="0" max="1" name="confidence" id="confidence"
+                 value="{{ result.form.confidence if result else 0.5 }}">
+        </div>
+      </div>
+      <label for="justification">Confidence justification</label>
+      <input type="text" name="justification" id="justification"
+             value="{{ result.form.justification if result else default_justification }}">
+
+      <div class="checkbox-row">
+        <input type="checkbox" name="score" id="score" {% if not result or result.form.score %}checked{% endif %}
+               {% if not harness_available %}disabled{% endif %}>
+        <label for="score" style="margin:0;">
+          Score against Tier A ground truth
+          {% if not harness_available %}
+            <span class="muted">(no ecdat-harness checkout found at {{ harness_root }})</span>
+          {% endif %}
+        </label>
+      </div>
+      <button type="submit">Run scan</button>
+    </form>
+  </div>
+
+  {% if result %}
+  <div class="card">
+    <h2>Run outcome</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="value">{{ result.document.outcome }}</div><div class="label">outcome</div></div>
+      <div class="stat"><div class="value">{{ result.document.coverage.scanned | length }}</div><div class="label">files examined</div></div>
+      <div class="stat"><div class="value">{{ result.document.findings | length }}</div><div class="label">findings</div></div>
+      <div class="stat"><div class="value">{{ result.document.support_level }}</div><div class="label">support level</div></div>
+    </div>
+    {% if result.document.visibility %}
+      <p class="muted" style="margin-top:1rem;">Visibility notes:</p>
+      <ul>
+        {% for v in result.document.visibility %}
+        <li class="muted">[{{ v.dimension }} / {{ v.support_level }}] {{ v.detail }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+
+  {% if result.score_error %}
+  <div class="card"><p class="warn">Not scored: {{ result.score_error }}</p></div>
+  {% elif result.score %}
+  <div class="card">
+    <h2>Scored against Tier A ground truth</h2>
+    {% set fc = result.score.false_certainty %}
+    {% set uc = result.score.under_claiming %}
+    <div class="stat-grid">
+      <div class="stat {{ 'good' if fc.rate == 0 else 'bad' }}">
+        <div class="value">{{ fc.rate }}</div>
+        <div class="label">false-certainty rate ({{ fc.false_certainty_count }}/{{ fc.total_eligible }})</div>
+      </div>
+      {% for surface, n in result.score.per_surface_recall.items() %}
+      <div class="stat"><div class="value">{{ n.found }}/{{ n.total }}</div><div class="label">{{ surface }} recall</div></div>
+      {% endfor %}
+      <div class="stat {{ 'bad' if uc.count > 0 else 'good' }}">
+        <div class="value">{{ uc.rate }}</div>
+        <div class="label">under-claiming ({{ uc.count }}/{{ uc.total_expected_known }})</div>
+      </div>
+    </div>
+    {% if fc.offenders %}
+      <p class="offender" style="margin-top:1rem;">Over-claims:</p>
+      <ul>{% for o in fc.offenders %}<li class="offender">{{ o.asset_id }}.{{ o.field }}: reported KNOWN, expected {{ o.expected_state }}</li>{% endfor %}</ul>
+    {% endif %}
+    {% if result.score.findings_not_matched_to_a_planted_asset %}
+      <p class="muted" style="margin-top:1rem;">Findings not matched to a planted asset (judge each — not counted as false positives):</p>
+      <ul>
+        {% for u in result.score.findings_not_matched_to_a_planted_asset %}
+        <li class="muted">{{ u.path.split('/')[-1] }}: {{ u.fields }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <h2>Findings</h2>
+    {% for f in result.document.findings %}
+    <details class="finding-block" open>
+      <summary>{{ f.finding_id }} · {{ f.surface }}</summary>
+      <table>
+        <tr><th>Field</th><th>Value</th><th>Epistemic state</th><th>Resolution</th></tr>
+        {% for field in f.fields %}
+        <tr>
+          <td><code>{{ field.field }}</code></td>
+          <td>{{ field.value }}</td>
+          <td><span class="badge {{ field.epistemic_state }}">{{ field.epistemic_state }}</span></td>
+          <td class="muted">{{ field.resolution_status if field.resolution_status else '' }} {{ field.resolution_reason if field.resolution_reason else '' }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </details>
+    {% else %}
+    <p class="muted">No findings.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h2>Raw run document</h2>
+    <pre>{{ result.document_json }}</pre>
+  </div>
+  {% endif %}
+
+</main>
+</body>
+</html>
