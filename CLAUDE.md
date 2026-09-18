@@ -28,21 +28,32 @@ Read only the sections relevant to the current task. Cite section numbers in pla
 - No LLM calls in any detection, correlation, risk, or recommendation path.
 - No harness identifiers (meridian, harness paths, hostnames) anywhere in src/ or rules/.
 
-## Anti-hallucination rules
-- Never write a parser for tool output that isn't in tests/fixtures/recorded/. If missing: STOP,
-  write the exact command needed to docs/open-issues.md.
-- Never type a spec enum, key size, byte count, or standard date from memory. It must come from
-  schemas/ or data/ with a citation field, or be marked TODO-VERIFY and fail a test.
-- Label claims in plans/ADRs: FACT / VERIFIED / UNVERIFIED / INFERENCE / ASSUMPTION / DECISION.
-- If a locked decision seems wrong or a simpler design exists: do NOT implement it.
-  Append to docs/deviations.md (issue, evidence, options, impact) and stop.
-- Don't widen scope. Items listed "out of scope" in the Lock are out of scope.
+## Anti-hallucination rules (amended)
+- PARSERS are written only against tests/fixtures/recorded/. RUNTIME INPUT is never
+  rejected for being unrecorded: parse it, and if tool_version differs from every
+  recorded version, attach a VisibilityEntry warning "parser validated against <v>;
+  observed <v'>" to the run. Raise only in --strict mode (used by scoring).
+- Every adapter MUST be able to invoke its tool (subprocess) on a real target path,
+  with pinned flags, per-target timeout, and network egress disabled. Replay of a
+  recorded file (--input) is for tests and scoring only.
+- Canonical docs must be non-empty. CI fails on any 0-byte file in docs/architecture/.
+  Never cite a Directive or Part whose file is empty; stop and file an open issue.
+- Confidence values come from data/base_confidence.yaml rows with a citation. No CLI
+  or UI input for confidence. Rows sourced from Final Architecture Part 3 are cited as
+  "engineering estimate, Part 3; no published benchmark" — usable, labelled.
 
-## Workflow
-- Start every task in plan mode. Plan must list: Lock sections used, files touched,
-  tests written first, out-of-scope items.
-- Tests encode expected behaviour from canonical docs/harness ground truth, NOT from your implementation.
-- Done = tests pass + no TODO-VERIFY in touched code paths + short ADR if a choice was made.
+## Workflow (amended)
+- CI runs pytest. A phase is not done until CI is green.
+- The only phase numbering is docs/build-plan.md.
+- A phase is done only when `ecdat scan` runs LIVE on the Tier A target directory and
+  score_run.py is re-run. Fixture-only passes do not close a phase.
+- Any departure from build-plan.md or CLAUDE.md gets a DEV-NNN entry the same session.
+
+## Security defaults for subprocesses
+- semgrep: --metrics=off, SEMGREP_SEND_METRICS=off, --config rules/semgrep only,
+  --timeout per file, --max-target-bytes.
+- trivy: --skip-db-update with configured offline DB path; --timeout.
+- All tool invocations: no network (test enforces), wall-clock limit, output size cap.
 
 ## Stack
 Python 3.12, pydantic v2, pytest + hypothesis, PostgreSQL (JSONB) behind a repository
