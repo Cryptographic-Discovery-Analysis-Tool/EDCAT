@@ -1,0 +1,146 @@
+# Evidence closure catalogue (Pramana_Ledger_Spec.md §5.8).
+#
+# For each input that can leave a ledger row UNBOUNDED, the MINIMUM piece of
+# evidence that would bound it. Minimum is the operative word: the task is
+# "probe this endpoint from this vantage", not "do a TLS audit". A closure
+# task an operator cannot execute in an afternoon is a wish, not a task.
+#
+# `bounds` says why collecting it bounds the row. That sentence is shown next
+# to the task, because an operator who is told to go and collect something is
+# owed the reason.
+#
+# Citation rule as everywhere in data/: a usable row cites a non-empty in-repo
+# source and quotes it.
+schema_version: 1
+
+tasks:
+  - key: function
+    collect: "Identify what this key or endpoint is actually used for"
+    method: >-
+      Capture a handshake from a vantage that reaches the surface, or point a
+      source rule at the call site that uses the key.
+    bounds: >-
+      No clock applies until the function is known: a signature fails by
+      forgery after Z, a key establishment fails by recorded-now-decrypted-at-Z.
+      Until we know which, neither ledger owns the row.
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.1"
+    quote: "Anything else -> UNKNOWN. No default."
+
+  - key: algorithm_family
+    collect: "Resolve the algorithm family in use on this context"
+    method: >-
+      Record the negotiated group or suite from a handshake, or resolve the
+      configuration chain to the literal transformation string.
+    bounds: >-
+      The confidentiality ledger applies only to Shor-broken families. Until
+      the family resolves to a cited row, the row could be SAFE (post-quantum)
+      or BLEEDING (classical), and asserting either would be a guess.
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.5"
+    quote: "not Shor-broken, or HYBRID_KEX from start -> SAFE"
+
+  - key: data_class_binding
+    collect: "Declare the data class carried over this surface, and its secrecy lifetime X"
+    method: >-
+      An operator states the classification and X against the target, citing a
+      row of the classification table.
+    bounds: >-
+      The deadline is Z - X. With no X there is no deadline, so no window can
+      be computed at all -- this is the single highest-leverage missing input,
+      because one declaration can bound every row on the surface.
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.3"
+    quote: "rows in `data/data_lifetime.yaml` are usable only with a citation"
+
+  - key: start_confirmed
+    collect: "Declare go-live, or take one traffic-path observation of this surface"
+    method: >-
+      Either the operator declares the go-live date, or one handshake is
+      captured from a recorded vantage; the earlier of the two becomes the
+      confirmed start.
+    bounds: >-
+      Under capture_assumption=SINCE_CONFIRMED the exposure window opens at the
+      confirmed start. notBefore and snapshot presence bound only possibility,
+      so without one of these two the window has no left edge.
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.2"
+    quote: "`confirmed_since` = earliest Observed traffic-path observation"
+
+  - key: start_possible
+    collect: "Obtain any date that bounds when this surface could first have carried traffic"
+    method: >-
+      Read notBefore off the certificate, take the earliest snapshot the
+      surface appears in, or have the operator declare go-live.
+    bounds: >-
+      Under capture_assumption=SINCE_POSSIBLE the window opens at the earliest
+      possible date. Any one of the three inputs supplies it.
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.2"
+    quote: "`possible_since = min(not_before, declared_go_live, first_snapshot_containing)`"
+
+  - key: inferred_function
+    collect: "Observe this usage rather than inferring it"
+    method: >-
+      Capture a handshake in which the suite is actually negotiated, rather
+      than merely offered.
+    bounds: >-
+      Policy does not accept INFERRED inputs. An offered suite is a capability;
+      observing it negotiated turns the conditional band into the band, and
+      observing that it is never negotiated removes the row.
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.1"
+    quote: "Offered-but-not-negotiated suites, keyUsage/EKU -> **Inferred** capability contexts."
+
+  - key: inferred_algorithm
+    collect: "Resolve the configuration chain, or capture the algorithm at runtime"
+    method: >-
+      Run the config-chain resolver over the deployment, or observe the
+      transformation actually used at runtime.
+    bounds: >-
+      Policy does not accept INFERRED inputs. The inferred algorithm decides
+      whether the Shor-broken clock applies at all.
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.5"
+    quote: "Inferred input and !accept_inferred -> UNBOUNDED (+ conditional band attached)"
+
+  - key: migration_observation
+    collect: "Probe the negotiated group for this surface from a recorded vantage"
+    method: >-
+      One handshake per vantage, recording the negotiated group and whether
+      classical key establishment is still accepted.
+    bounds: >-
+      M -- the date the clock stopped -- comes only from an observed
+      negotiation with classical disabled. A configuration claiming hybrid
+      stops nothing, so a configured-but-unobserved surface stays BLEEDING
+      until it is probed.
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.7"
+    quote: >-
+      Stops a surface only on an **observed** negotiation with classical
+      disabled, per vantage
+
+  - key: signed_at
+    collect: "Record when this artefact was signed"
+    method: >-
+      Read the signing time from the artefact or its manifest, or have the
+      operator declare it.
+    bounds: >-
+      required_until = signed_at + A. Without signed_at there is no
+      required_until to compare against Z.
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.6"
+    quote: "`required_until = signed_at + A`"
+
+  - key: authenticity_lifetime
+    collect: "Declare how long this artefact's signature must stay trustworthy (A)"
+    method: >-
+      An operator states A against the target, citing a row of the
+      classification table. A = 0 means session authentication.
+    bounds: >-
+      A decides between ROTATE_BEFORE_Z (nothing outlives the session) and
+      RESIGN_BEFORE_Z (the artefact must be re-signed or timestamped before Z).
+      Those are very different pieces of work.
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.6"
+    quote: "`A == 0` (session) -> ROTATE_BEFORE_Z, deadline `Z - Y`"
