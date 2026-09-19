@@ -2,7 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "ecdat-ui",
+      "name": "pramana",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "uvicorn", "ecdat.api.app:app", "--port", "8000"],
+      "port": 8000
+    },
+    {
+      "name": "ecdat-ui-legacy",
       "runtimeExecutable": "python",
       "runtimeArgs": ["ui/app.py"],
       "port": 5000

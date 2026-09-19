@@ -211,7 +211,7 @@ pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-That runs 222 tests, including all 18 worked examples from the frozen
+That runs 247 tests, including all 18 worked examples from the frozen
 specification. The calculation engine is real and fully tested. **The part that
 goes and looks at your actual systems is not finished yet** — see the checklist.
 
@@ -237,6 +237,7 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [x] **Standard report export** — writes a CycloneDX 1.6 file, checked against the official schema, with a "could not determine" list so silence is never read as "all clear"
 - [x] **Import other tools' reports** — reads any CycloneDX 1.6 file as evidence, recorded as *someone told us*, never as *we saw it*
 - [x] **Leak guard on export** — refuses to write a file that looks like it contains key material
+- [x] **Dashboard** — web interface showing the ledger, the evidence behind each verdict, the to-do queue and coverage, with the Z date and the recording assumption as controls you can move
 - [x] **Automated checks** — no uncited number anywhere in the data files
 
 ### Not done yet
@@ -247,7 +248,6 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [ ] **Container and package scanning**
 - [ ] **Hardware security module and cloud key reader**
 - [ ] **Compiled binary scanning**
-- [ ] **Dashboard** — proper web interface (there is a rough prototype)
 - [ ] **Signed export** — the report is not signed yet, so it proves nothing about who wrote it
 - [ ] **Accuracy scoring** — measure and publish our own error rates on a test environment
 - [ ] **Upgrade recommendations** — what to move to, per use
@@ -282,3 +282,24 @@ it is, no open-source licence has actually been granted. It is on the checklist.
 - `docs/deviations.md` — every place the code departs from the spec, and why
 - `docs/open-issues.md` — every question still open
 - `docs/build-plan.md` — phases and what state each is in
+
+---
+
+## Running the dashboard
+
+```bash
+pip install -e ".[dev,api]"
+```
+
+```bash
+cd ui/dashboard && npm install && npm run build
+```
+
+```bash
+python -m uvicorn ecdat.api.app:app --port 8000
+```
+
+Then open <http://127.0.0.1:8000>. It opens on fixture data — constructed
+evidence used to exercise every verdict while the live connection prober is
+still being built. The page says so at the top; nothing in it was observed on
+a real network.

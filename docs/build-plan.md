@@ -209,7 +209,7 @@ ledger phases are recorded here rather than left to float in another document:
 | 4 Exposure ledger | `risk/confidentiality_ledger.py`, `risk/authentication_ledger.py`, `risk/record.py` | implemented, all of §6 green |
 | 5 Closure engine | `closure/engine.py`, `data/closure_catalog.yaml` | implemented, unit-green |
 | 6 CBOM export | `export/cyclonedx.py` | implemented, unit-green; signed export deferred (OI-013) |
-| 7 Dashboard | `ui/` | prototype only (Flask replay form) |
+| 7 Dashboard | `src/ecdat/api/` (FastAPI) + `ui/dashboard/` (React/Vite) | implemented, unit-green over fixtures; `ui/app.py` Flask prototype superseded but not deleted |
 | 8 Harness scoring | `ground-truth/exposure.expected.yaml`, `score_run.py` extension | not started |
 
 None of 1–5 is CLOSED: per CLAUDE.md a phase closes only when `ecdat scan`

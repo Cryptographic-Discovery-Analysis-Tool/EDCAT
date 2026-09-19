@@ -1,0 +1,158 @@
+:root {
+  --bg: #0f1216;
+  --panel: #171b21;
+  --panel-2: #1d222a;
+  --line: #2a313b;
+  --text: #e6e9ee;
+  --muted: #9aa4b2;
+  --accent: #7aa2f7;
+
+  /* Bands are categories, never a gradient. Colour is a label here, not a
+     severity scale -- the ordering lives in the ledger, not in the palette. */
+  --bleeding: #f7768e;
+  --unsavable: #ff9e64;
+  --unbounded: #bb9af7;
+  --savable: #7aa2f7;
+  --safe: #9ece6a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+.app { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
+
+/* --- controls -------------------------------------------------------- */
+
+.sidebar {
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.brand h1 { margin: 0; font-size: 20px; letter-spacing: 0.02em; }
+.brand p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+
+select, input[type="number"], input[type="date"] {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.checkbox { display: flex; align-items: center; gap: 8px; }
+
+.note {
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border-left: 2px solid var(--accent);
+  padding: 8px 10px;
+  border-radius: 0 6px 6px 0;
+}
+
+button {
+  background: var(--accent);
+  color: #0b0e13;
+  border: 0;
+  border-radius: 6px;
+  padding: 9px 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); font-weight: 400; }
+
+/* --- main ------------------------------------------------------------ */
+
+.main { padding: 20px 24px 60px; overflow: auto; }
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+.tabs button {
+  background: transparent; color: var(--muted); border: 0; border-bottom: 2px solid transparent;
+  border-radius: 0; padding: 10px 14px; font-weight: 500;
+}
+.tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+
+.counts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.count {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 12px; display: flex; gap: 8px; align-items: baseline;
+}
+.count .n { font-size: 18px; font-weight: 700; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--panel); }
+
+.band {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 12px; font-weight: 700; letter-spacing: .03em; color: #0b0e13;
+}
+.band-BLEEDING { background: var(--bleeding); }
+.band-UNSAVABLE { background: var(--unsavable); }
+.band-UNBOUNDED { background: var(--unbounded); }
+.band-SAVABLE { background: var(--savable); }
+.band-SAFE, .band-SAFE_UNTIL_Z { background: var(--safe); }
+.band-ROTATE_BEFORE_Z { background: var(--unbounded); }
+.band-RESIGN_BEFORE_Z { background: var(--unsavable); }
+
+.status {
+  font-size: 11px; padding: 1px 6px; border-radius: 3px;
+  border: 1px solid var(--line); color: var(--muted);
+}
+.status-KNOWN { color: var(--safe); border-color: var(--safe); }
+.status-INFERRED { color: var(--unsavable); border-color: var(--unsavable); }
+.status-DECLARED { color: var(--savable); border-color: var(--savable); }
+.status-UNKNOWN { color: var(--unbounded); border-color: var(--unbounded); }
+
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+
+/* --- evidence card --------------------------------------------------- */
+
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 92vw);
+  background: var(--panel); border-left: 1px solid var(--line);
+  padding: 22px; overflow: auto; box-shadow: -18px 0 40px rgba(0,0,0,.45);
+}
+.drawer h2 { margin: 0 0 4px; font-size: 16px; }
+.drawer section { margin-top: 20px; }
+.drawer section h3 {
+  margin: 0 0 8px; font-size: 12px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 12px; }
+.kv dt { color: var(--muted); font-size: 12px; }
+.kv dd { margin: 0; word-break: break-word; }
+
+.card {
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 12px; margin-bottom: 10px;
+}
+.card h4 { margin: 0 0 6px; font-size: 14px; }
+
+.ok { color: var(--safe); }
+.bad { color: var(--bleeding); }
+
+.banner {
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--unsavable);
+  padding: 10px 14px; border-radius: 0 6px 6px 0; margin-bottom: 18px; font-size: 13px;
+}

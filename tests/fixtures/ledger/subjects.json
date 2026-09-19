@@ -1,0 +1,595 @@
+{
+  "schema_version": 1,
+  "note": "CONSTRUCTED fixture evidence. No adapter has run and nothing here was observed on any real network. Regenerate with tests/fixtures/ledger/build_subjects.py.",
+  "subjects": [
+    {
+      "usage_context": {
+        "usage_context_id": "payments-api:tls:kex",
+        "asset_id": "payments-api-key",
+        "surface_id": "tls:payments-api:443",
+        "protocol_context": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+        "function": {
+          "value": "KEY_ESTABLISHMENT",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": "FUNC-TLS-KEX-001"
+        },
+        "algorithm": {
+          "value": "X25519",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "temporal": {
+        "surface_id": "tls:payments-api:443",
+        "observation_ts": "2026-09-18",
+        "not_before": {
+          "value": "2020-11-04",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-cert"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        },
+        "declared_go_live": null,
+        "first_snapshot_containing": null,
+        "first_observed": {
+          "value": "2021-01-01",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "binding_key": "TEST.X_25Y",
+      "binding_source_ref": "operator declaration",
+      "migrations": [],
+      "signed_at": null
+    },
+    {
+      "usage_context": {
+        "usage_context_id": "session-cache:tls:kex",
+        "asset_id": "session-cache-key",
+        "surface_id": "tls:session-cache:6379",
+        "protocol_context": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+        "function": {
+          "value": "KEY_ESTABLISHMENT",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": "FUNC-TLS-KEX-001"
+        },
+        "algorithm": {
+          "value": "P-256",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "temporal": {
+        "surface_id": "tls:session-cache:6379",
+        "observation_ts": "2026-09-18",
+        "not_before": null,
+        "declared_go_live": null,
+        "first_snapshot_containing": null,
+        "first_observed": {
+          "value": "2021-01-01",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "binding_key": "TEST.X_1Y",
+      "binding_source_ref": "operator declaration",
+      "migrations": [],
+      "signed_at": null
+    },
+    {
+      "usage_context": {
+        "usage_context_id": "legacy-settlement:tls:kex",
+        "asset_id": "legacy-settlement-key",
+        "surface_id": "tls:legacy-settlement:443",
+        "protocol_context": "TLS_RSA_WITH_AES_128_CBC_SHA",
+        "function": {
+          "value": "KEY_TRANSPORT",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": "FUNC-TLS-KEYTRANSPORT-001"
+        },
+        "algorithm": {
+          "value": "RSA",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "temporal": {
+        "surface_id": "tls:legacy-settlement:443",
+        "observation_ts": "2026-09-18",
+        "not_before": null,
+        "declared_go_live": null,
+        "first_snapshot_containing": null,
+        "first_observed": {
+          "value": "2021-01-01",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "binding_key": "TEST.X_7Y",
+      "binding_source_ref": "operator declaration",
+      "migrations": [],
+      "signed_at": null
+    },
+    {
+      "usage_context": {
+        "usage_context_id": "records-api:tls:kex",
+        "asset_id": "records-api-key",
+        "surface_id": "tls:records-api:443",
+        "protocol_context": "TLS_AES_256_GCM_SHA384",
+        "function": {
+          "value": "KEY_ESTABLISHMENT",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": "FUNC-TLS-KEX-001"
+        },
+        "algorithm": {
+          "value": "X25519",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "temporal": {
+        "surface_id": "tls:records-api:443",
+        "observation_ts": "2026-09-18",
+        "not_before": null,
+        "declared_go_live": null,
+        "first_snapshot_containing": null,
+        "first_observed": {
+          "value": "2021-01-01",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "binding_key": "TEST.X_25Y",
+      "binding_source_ref": "operator declaration",
+      "migrations": [
+        {
+          "surface_id": "tls:records-api:443",
+          "vantage": "dmz-probe-1",
+          "observed_at": "2026-06-01",
+          "negotiated_group": "X25519MLKEM768",
+          "classical_still_accepted": false,
+          "status": "KNOWN",
+          "evidence_refs": [
+            "E-probe"
+          ]
+        }
+      ],
+      "signed_at": null
+    },
+    {
+      "usage_context": {
+        "usage_context_id": "partner-gateway:tls:kex",
+        "asset_id": "partner-gateway-key",
+        "surface_id": "tls:partner-gateway:443",
+        "protocol_context": "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+        "function": {
+          "value": "KEY_ESTABLISHMENT",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": "FUNC-TLS-KEX-001"
+        },
+        "algorithm": {
+          "value": "X25519",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "temporal": {
+        "surface_id": "tls:partner-gateway:443",
+        "observation_ts": "2026-09-18",
+        "not_before": null,
+        "declared_go_live": null,
+        "first_snapshot_containing": null,
+        "first_observed": {
+          "value": "2022-03-15",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "binding_key": "TEST.X_25Y",
+      "binding_source_ref": "operator declaration",
+      "migrations": [
+        {
+          "surface_id": "tls:partner-gateway:443",
+          "vantage": "config-file",
+          "observed_at": "2026-05-01",
+          "negotiated_group": "X25519MLKEM768",
+          "classical_still_accepted": false,
+          "status": "INFERRED",
+          "evidence_refs": []
+        }
+      ],
+      "signed_at": null
+    },
+    {
+      "usage_context": {
+        "usage_context_id": "archive-node:tls:kex",
+        "asset_id": "archive-node-key",
+        "surface_id": "tls:archive-node:8443",
+        "protocol_context": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+        "function": {
+          "value": "KEY_ESTABLISHMENT",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": "FUNC-TLS-KEX-001"
+        },
+        "algorithm": {
+          "value": "X25519",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "temporal": {
+        "surface_id": "tls:archive-node:8443",
+        "observation_ts": "2026-09-18",
+        "not_before": {
+          "value": "2019-03-01",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-cert"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        },
+        "declared_go_live": null,
+        "first_snapshot_containing": null,
+        "first_observed": null
+      },
+      "binding_key": "TEST.X_25Y",
+      "binding_source_ref": "operator declaration",
+      "migrations": [],
+      "signed_at": null
+    },
+    {
+      "usage_context": {
+        "usage_context_id": "billing-batch:src:KeyWrapService",
+        "asset_id": "billing-batch-wrapping-key",
+        "surface_id": "src:billing-batch",
+        "protocol_context": "javax.crypto.Cipher at KeyWrapService.java:27",
+        "function": {
+          "value": "KEY_TRANSPORT",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-semgrep"
+          ],
+          "derived_from": [],
+          "rule_id": "FUNC-SRC-KEYTRANSPORT-001"
+        },
+        "algorithm": {
+          "value": null,
+          "state": "UNKNOWN",
+          "resolution": null,
+          "evidence_refs": [],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "temporal": {
+        "surface_id": "src:billing-batch",
+        "observation_ts": "2026-09-18",
+        "not_before": null,
+        "declared_go_live": {
+          "value": "2020-06-01",
+          "state": "DECLARED",
+          "resolution": null,
+          "evidence_refs": [],
+          "derived_from": [],
+          "rule_id": null
+        },
+        "first_snapshot_containing": null,
+        "first_observed": null
+      },
+      "binding_key": "TEST.X_10Y",
+      "binding_source_ref": "operator declaration",
+      "migrations": [],
+      "signed_at": null
+    },
+    {
+      "usage_context": {
+        "usage_context_id": "legacy-settlement:tls:offered",
+        "asset_id": "legacy-settlement-cert",
+        "surface_id": "tls:legacy-settlement:443",
+        "protocol_context": "offered, not negotiated: TLS_RSA_WITH_3DES_EDE_CBC_SHA",
+        "function": {
+          "value": "KEY_TRANSPORT",
+          "state": "INFERRED",
+          "resolution": null,
+          "evidence_refs": [],
+          "derived_from": [],
+          "rule_id": "FUNC-TLS-OFFERED-001"
+        },
+        "algorithm": {
+          "value": "RSA",
+          "state": "INFERRED",
+          "resolution": null,
+          "evidence_refs": [],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "temporal": {
+        "surface_id": "tls:legacy-settlement:443",
+        "observation_ts": "2026-09-18",
+        "not_before": null,
+        "declared_go_live": null,
+        "first_snapshot_containing": null,
+        "first_observed": {
+          "value": "2021-01-01",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "binding_key": "TEST.X_7Y",
+      "binding_source_ref": "operator declaration",
+      "migrations": [],
+      "signed_at": null
+    },
+    {
+      "usage_context": {
+        "usage_context_id": "unknown-appliance:tls:kex",
+        "asset_id": "unknown-appliance-key",
+        "surface_id": "tls:unknown-appliance:443",
+        "protocol_context": "TLS_SRP_SHA_WITH_AES_128_CBC_SHA",
+        "function": {
+          "value": null,
+          "state": "UNKNOWN",
+          "resolution": null,
+          "evidence_refs": [],
+          "derived_from": [],
+          "rule_id": null
+        },
+        "algorithm": null
+      },
+      "temporal": {
+        "surface_id": "tls:unknown-appliance:443",
+        "observation_ts": "2026-09-18",
+        "not_before": null,
+        "declared_go_live": null,
+        "first_snapshot_containing": null,
+        "first_observed": {
+          "value": "2023-02-01",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "binding_key": "TEST.X_25Y",
+      "binding_source_ref": "operator declaration",
+      "migrations": [],
+      "signed_at": null
+    },
+    {
+      "usage_context": {
+        "usage_context_id": "payments-api:tls:auth",
+        "asset_id": "payments-api-cert",
+        "surface_id": "tls:payments-api:443",
+        "protocol_context": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 server certificate",
+        "function": {
+          "value": "SIGNATURE_AUTH",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": "FUNC-CERT-AUTH-001"
+        },
+        "algorithm": null
+      },
+      "temporal": {
+        "surface_id": "tls:payments-api:443",
+        "observation_ts": "2026-09-18",
+        "not_before": null,
+        "declared_go_live": null,
+        "first_snapshot_containing": null,
+        "first_observed": {
+          "value": "2021-01-01",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "binding_key": "TEST.A_SESSION",
+      "binding_source_ref": "operator declaration",
+      "migrations": [],
+      "signed_at": null
+    },
+    {
+      "usage_context": {
+        "usage_context_id": "firmware-release:signature",
+        "asset_id": "firmware-signing-key",
+        "surface_id": "artefact:firmware-release",
+        "protocol_context": "release manifest signature",
+        "function": {
+          "value": "SIGNATURE_AUTH",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-manifest"
+          ],
+          "derived_from": [],
+          "rule_id": "FUNC-SRC-SIGNATURE-001"
+        },
+        "algorithm": {
+          "value": "RSA",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "temporal": {
+        "surface_id": "artefact:firmware-release",
+        "observation_ts": "2026-09-18",
+        "not_before": null,
+        "declared_go_live": null,
+        "first_snapshot_containing": null,
+        "first_observed": {
+          "value": "2026-01-01",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "binding_key": "TEST.A_15Y",
+      "binding_source_ref": "operator declaration",
+      "migrations": [],
+      "signed_at": "2026-01-01"
+    },
+    {
+      "usage_context": {
+        "usage_context_id": "token-vault:src:TokenVault",
+        "asset_id": "token-vault-key",
+        "surface_id": "src:token-vault",
+        "protocol_context": "javax.crypto.Cipher at TokenVault.java:19",
+        "function": {
+          "value": "ENCRYPTION",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-semgrep"
+          ],
+          "derived_from": [],
+          "rule_id": "FUNC-SRC-KEYTRANSPORT-001"
+        },
+        "algorithm": {
+          "value": "AES/GCM/NoPadding",
+          "state": "KNOWN",
+          "resolution": null,
+          "evidence_refs": [
+            "E-probe"
+          ],
+          "derived_from": [],
+          "rule_id": null
+        }
+      },
+      "temporal": {
+        "surface_id": "src:token-vault",
+        "observation_ts": "2026-09-18",
+        "not_before": null,
+        "declared_go_live": {
+          "value": "2022-01-01",
+          "state": "DECLARED",
+          "resolution": null,
+          "evidence_refs": [],
+          "derived_from": [],
+          "rule_id": null
+        },
+        "first_snapshot_containing": null,
+        "first_observed": null
+      },
+      "binding_key": "TEST.X_10Y",
+      "binding_source_ref": "operator declaration",
+      "migrations": [],
+      "signed_at": null
+    }
+  ]
+}
