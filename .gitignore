@@ -11,3 +11,7 @@ build/
 
 # Scan run documents: regenerate with `python -m ecdat.cli scan`
 out/
+
+# Dashboard build output and deps (rebuilt by the packaging step)
+ui/dashboard/node_modules/
+ui/dashboard/dist/

@@ -369,3 +369,236 @@ See `tests/unit/risk/test_exposure_ledger.py::_m_case`.
 observed MigrationEvidence -- which would be a real design change, because a
 scheduled date is a declaration and §5.7 is explicit that declarations never
 stop the clock.
+
+---
+
+## OI-012 — §9 VERIFY 3 resolved: schema-validated writer, not cyclonedx-python-lib (2026-09-19)
+
+**Status:** CLOSED.
+
+`Pramana_Ledger_Spec.md` §9 item 3 asks whether `cyclonedx-python-lib`
+supports 1.6 `cryptoProperties`, and states the fallback itself: "else:
+schema-validated JSON writer, already sufficient".
+
+**Decision:** the schema-validated JSON writer, taken directly rather than
+after testing the library. Reasons, in order:
+
+1. The bundled `schemas/cyclonedx-1.6.schema.json` is the authority either
+   way. A library that produced output failing that schema would be wrong,
+   and one that passed it adds nothing we are not already checking.
+2. §5.11 requires the exposure facts to travel as `pramana:*` properties, not
+   as CycloneDX fields. Every library model would have to be escape-hatched
+   into a generic property list regardless.
+3. One fewer dependency in an air-gapped, source-delivered build.
+
+`jsonschema>=4.18` is now a runtime dependency; nothing else was added.
+
+**Consequence to watch:** we are responsible for 1.6 conformance ourselves. If
+the spec revises, `schemas/` must be updated and the export tests re-run --
+there is no library upgrade that would do it for us.
+
+---
+
+## OI-013 — signed export (JSF) is not implemented (2026-09-19)
+
+**Status:** OPEN, deliberately deferred.
+
+§3 lists "signed export (VERIFY JSF field)" and §9 item 5 asks us to verify
+CycloneDX's JSF `signature` field. Neither is done. The export emits no
+`signature` and makes no integrity claim about itself beyond
+`pramana:exposure:inputs_sha256` on each row, which covers the INPUTS to a
+calculation, not the document.
+
+**Why deferred, not forgotten:** signing needs a key, and a key needs a
+custody story -- where it lives, who can use it, how it is rotated, and what a
+verifier is supposed to trust. §8's definition of finished lists "encrypted
+export" and "signed offline update bundle" under hardening, alongside RBAC and
+the audit log, which is where that story belongs. Bolting a signature on now
+would produce a document that looks authenticated and is not.
+
+**Blocker for:** §8 item 4 is satisfied without it (schema validity, the
+undetermined bucket, no key bytes, third-party round-trip) so this does not
+block phase 6. It does block claiming "signed export" anywhere public.
+
+---
+
+## OI-007 — RESOLVED 2026-09-19: Docker, Maven and haproxy are available
+
+The build box (`docs/build-box.md`) provides all three. What OI-007 said was
+unverified is now executed, not just reviewed:
+
+- `docker compose config` validates the Tier A compose file against real
+  Docker (29.1.3), not PyYAML.
+- Both Tier A images **build**: `payment-gateway` (Corretto 25 via the image's
+  own `maven:3.9.16-amazoncorretto-25-alpine`) and `edge-lb`.
+- The stack **runs**. HAProxy terminates TLS with the `pay-edge` certificate
+  exactly as `haproxy.cfg` intends, confirmed by a real handshake.
+- H6's "internal network, no egress" is real: the endpoint is unreachable
+  from the host and must be probed from a container on the same network.
+
+Still open from the original entry: BuildKit attestation retrieval (TOPO-X2)
+has not been attempted.
+
+## OI-009 — RESOLVED 2026-09-19: semgrep runs at its pinned version
+
+semgrep 1.99.0 is installed on the build box and `semgrep --version` reports
+`1.99.0`. The Windows limitation is unchanged and irrelevant now: scanning
+happens on the box.
+
+---
+
+## OI-014 — Host OpenSSL is 3.0.13; the fixtures were recorded against 3.5.4 (2026-09-19)
+
+**Status:** OPEN, with a measured workaround.
+
+Ubuntu 24.04 ships OpenSSL 3.0.13. `tests/fixtures/recorded/openssl/3.5.4/`
+was recorded against 3.5.4, so a parser validated there runs against a
+different build here. Per CLAUDE.md that attaches a VisibilityEntry warning at
+runtime and raises under `--strict` (used by scoring) — the intended
+behaviour, and the reason this is recorded rather than patched over.
+
+**Measured consequence, not assumed.** The host OpenSSL cannot speak the
+hybrid group at all:
+
+```
+$ openssl s_client -groups X25519MLKEM768 -connect 127.0.0.1:1
+Call to SSL_CONF_cmd(-groups, X25519MLKEM768) failed
+... group 'X25519MLKEM768' cannot be set
+$ openssl s_client -groups X25519 -connect 127.0.0.1:1
+... connect:errno=111        # accepted the group, failed at the socket
+```
+
+The control matters: X25519 is accepted and fails only at the connection,
+X25519MLKEM768 is rejected before any connection is attempted.
+
+**Why it is not blocking.** The containers carry their own OpenSSL **3.5.8** —
+both HAProxy (`haproxy -vv`) and the prober image — so hybrid negotiation is
+observable inside the Docker network, which is where the endpoints live
+anyway. Host-side `openssl` is only used for certificate parsing, where 3.0.13
+is adequate.
+
+**Resolution when it matters:** build a prober image pinned to OpenSSL 3.5.4
+to match the fixtures, rather than upgrading the host. The probe should ship
+its own TLS stack for exactly this reason — a scanner whose results depend on
+the distribution it happens to run on is not reproducible.
+
+---
+
+## OI-015 — semgrep 1.99.0 is broken by setuptools >= 81 (2026-09-19)
+
+**Status:** RESOLVED in `tools/provision/build-box.sh`; recorded because the
+failure mode is silent.
+
+`pip install semgrep==1.99.0` **succeeds**, and the resulting `semgrep`
+binary then dies:
+
+```
+ModuleNotFoundError: No module named 'pkg_resources'
+  semgrep/tracing.py -> opentelemetry.instrumentation.requests
+  -> opentelemetry/instrumentation/dependencies.py -> from pkg_resources import (...)
+```
+
+semgrep 1.99.0 pulls `opentelemetry-instrumentation==0.46b0`, which imports
+`pkg_resources`; setuptools 81 removed it. An install that reports success and
+produces a broken binary is worse than one that fails, so the provisioning
+script pins `setuptools<81` both before and after the semgrep install (its
+dependency resolution can pull a newer one back in).
+
+Unpin when semgrep's dependency tree stops reaching for `pkg_resources`.
+
+---
+
+## OI-016 — Tier A DOES negotiate a hybrid PQ group; OI-008's E3 row is wrong (2026-09-19)
+
+**Status:** OPEN — the finding is measured; what to do with it is a decision.
+
+OI-008's E3 row states: *"Tier A's `edge-lb` (`haproxy.cfg`) offers only
+classical ciphers (`ECDHE-ECDSA-AES128-GCM-SHA256`,
+`ECDHE-RSA-AES256-GCM-SHA384`)."* That was read off the configuration file.
+The wire says otherwise.
+
+**Measured**, three consecutive handshakes from a container on the internal
+network, 2026-09-19:
+
+```
+Protocol version:        TLSv1.3
+Ciphersuite:             TLS_AES_256_GCM_SHA384
+Negotiated TLS1.3 group: X25519MLKEM768      (3/3 runs)
+```
+
+**Why.** HAProxy's `ciphers` directive governs TLS 1.2 and below. TLS 1.3
+group selection was never constrained by `haproxy.cfg`, so it fell through to
+the defaults of the OpenSSL the container image carries — **3.5.8**, which
+offers X25519MLKEM768. Forcing TLS 1.2 does yield
+`ECDHE-ECDSA-AES128-GCM-SHA256`, exactly as the config says, so the config
+line is not wrong — it is just silent about the thing that turned out to
+matter.
+
+**Two consequences, in opposite directions:**
+
+1. **Tier A now has E3 material.** OI-008 recorded that no Tier A target
+   could negotiate a hybrid group, which is why E3 was never run. That is no
+   longer true, and §9 VERIFY 1 (does sslyze report `X25519MLKEM768` as a
+   negotiated group) now has a target to test against.
+2. **The endpoint is NOT migrated.** A client offering only X25519 still
+   completes a TLS 1.3 handshake — classical is still accepted. Under §5.7
+   that is `classical_still_accepted = true`: the clock does **not** stop, the
+   row keeps the **PARTIAL** qualifier, and it stays BLEEDING.
+
+This is the design's own argument, measured on the first endpoint ever
+probed. Reading the configuration gives "classical". Taking one handshake and
+stopping gives "already migrated". Both are wrong, and the second is the
+dangerous one — it would mark a bleeding surface as safe.
+
+**Decision needed:** whether the harness *intends* Tier A to be classical. If
+so, `haproxy.cfg` needs an explicit TLS 1.3 group restriction and this becomes
+a harness fix. If the accidental hybrid is left in place, it should be
+promoted to a deliberate, documented Tier A property — it is a better test
+asset than the classical-only endpoint the harness thought it had.
+
+---
+
+## OI-017 — sslyze 6.2.0 cannot see a hybrid PQ group. §9 VERIFY 1 answered: NO (2026-09-19)
+
+**Status:** ANSWERED. The question is closed; the consequence is a design
+change, filed as DEV-004.
+
+§9 VERIFY item 1 asked whether "sslyze 6.2.0 reports `X25519MLKEM768` as a
+negotiated/offered group (recorded probe used `CERTIFICATE_INFO` only —
+FACT)". Tested against the live Tier A endpoint. **It does not, and it
+cannot.**
+
+**Measured, same endpoint, minutes apart:**
+
+```
+openssl s_client (OpenSSL 3.5.8)   Negotiated TLS1.3 group: X25519MLKEM768
+sslyze 6.2.0 --elliptic_curves     supported_curves: X25519, X448,
+                                   secp256r1, secp384r1, secp521r1
+```
+
+**Root cause, read off the library rather than inferred.** sslyze's TLS stack
+is nassl 5.4.0, whose complete key-type vocabulary is:
+
+```
+DH, EC, X25519, X448, RSA, DSA, RSA_PSS
+```
+
+There is no ML-KEM member. sslyze has no name for a hybrid group, so there is
+nothing for it to report even when the handshake uses one. This is a ceiling
+in the tool, not a configuration or base-image problem: no flag and no newer
+image changes it. Fixture:
+`tests/fixtures/recorded/openssl/3.5.8/nassl_key_type_ceiling.txt`.
+
+**Why it matters more than it looks.** The negotiated group is the single
+input that can stop an exposure clock (§5.7). With sslyze as the only TLS
+probe, no endpoint would ever be observed refusing classical, no clock would
+ever stop, and every surface would sit at BLEEDING forever. That fails in the
+*safe* direction — it under-claims — but it would make the tool structurally
+incapable of recognising a migration that actually happened, which is the
+thing the whole ledger exists to track.
+
+**Resolution:** the TLS adapter runs two probes. See DEV-004.
+
+**Not attempted:** whether a later sslyze/nassl adds ML-KEM. When one does,
+the second probe can be dropped and `NASSL_KEY_TYPES` in
+`adapters/tls/parser.py` re-recorded from the new library.

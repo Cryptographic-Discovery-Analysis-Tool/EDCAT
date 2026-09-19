@@ -203,13 +203,15 @@ ledger phases are recorded here rather than left to float in another document:
 
 | Phase | Deliverable | State (2026-09-19) |
 |---|---|---|
+| P4 Certs + TLS | `adapters/certs/`, `adapters/tls/`, `tools/prober/` | implemented, unit-green against fixtures recorded from the live Tier A endpoint; two probes per DEV-004 |
 | 1 Evidence model | `model/usage_context.py`, `model/temporal.py` | implemented, unit-green |
 | 2 Function resolution | `function/classifier.py` + 9 rule_ids | implemented, unit-green |
 | 3 Scenario engine | `risk/scenarios.py`, `context/binding.py`, `data/scenarios.yaml`, `data/data_lifetime.yaml`, `data/crypto_families.yaml` | implemented, unit-green |
 | 4 Exposure ledger | `risk/confidentiality_ledger.py`, `risk/authentication_ledger.py`, `risk/record.py` | implemented, all of §6 green |
 | 5 Closure engine | `closure/engine.py`, `data/closure_catalog.yaml` | implemented, unit-green |
-| 6 CBOM export | `export/cyclonedx.py` | not started |
-| 7 Dashboard | `ui/` | prototype only (Flask replay form) |
+| 6 CBOM export | `export/cyclonedx.py` | implemented, unit-green; signed export deferred (OI-013) |
+| 7 Dashboard | `src/ecdat/api/` (FastAPI) + `ui/dashboard/` (React/Vite) | implemented, unit-green over fixtures; `ui/app.py` Flask prototype superseded but not deleted |
+| — Recommendation | `recommend/engine.py`, `data/pqc_options.yaml` | implemented, unit-green (Final Architecture Part 8; not a numbered ledger phase) |
 | 8 Harness scoring | `ground-truth/exposure.expected.yaml`, `score_run.py` extension | not started |
 
 None of 1–5 is CLOSED: per CLAUDE.md a phase closes only when `ecdat scan`

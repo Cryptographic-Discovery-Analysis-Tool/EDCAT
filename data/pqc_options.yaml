@@ -1,0 +1,220 @@
+# PQC / hybrid recommendation option sets (Final Architecture Part 8;
+# Pramana_Ledger_Spec.md §3 row "Recommendation").
+#
+# Keyed on PURPOSE, never on algorithm name. Part 8's judge question puts it
+# exactly: "Why not just map RSA to ML-KEM? -> Because RSA does three
+# different jobs. Which one this instance is doing determines the answer, and
+# when we can't determine it, we say so instead of guessing."
+#
+# These are OPTION SETS, not picks. Where Part 8 lists more than one
+# acceptable answer, all of them ship and the operator chooses; the engine
+# does not invent a tie-break that Part 8 does not state.
+#
+# Same citation rule as every other file in data/: a usable row cites a
+# non-empty in-repo source and quotes the sentence that states it.
+schema_version: 1
+
+# --- purpose -> option set --------------------------------------------------
+
+options:
+  - key: KEY_ESTABLISHMENT
+    algorithm: ML-KEM
+    standard: FIPS 203
+    hybrid: false
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'How it is built' table"
+    quote: "Key establishment / encapsulation | **ML-KEM** (FIPS 203) — ML-KEM-768 is the general-purpose default"
+
+  - key: KEY_ESTABLISHMENT
+    algorithm: X25519MLKEM768
+    standard: "hybrid (transition)"
+    hybrid: true
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'How it is built' table"
+    quote: "TLS key exchange, transition period | **Hybrid** — X25519MLKEM768"
+
+  # Key transport (RSA encrypting a premaster secret) is the same failure mode
+  # as key establishment -- recorded now, opened at Z -- and Part 8's table
+  # covers it under "Key establishment / encapsulation": the replacement is a
+  # KEM either way. Recorded explicitly so the mapping is visible, not
+  # inherited silently.
+  - key: KEY_TRANSPORT
+    algorithm: ML-KEM
+    standard: FIPS 203
+    hybrid: false
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'How it is built' table"
+    quote: "Key establishment / encapsulation | **ML-KEM** (FIPS 203) — ML-KEM-768 is the general-purpose default"
+
+  - key: KEY_TRANSPORT
+    algorithm: X25519MLKEM768
+    standard: "hybrid (transition)"
+    hybrid: true
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'How it is built' table"
+    quote: "TLS key exchange, transition period | **Hybrid** — X25519MLKEM768"
+
+  - key: SIGNATURE_AUTH
+    algorithm: ML-DSA
+    standard: FIPS 204
+    hybrid: false
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'How it is built' table"
+    quote: "General digital signature | **ML-DSA** (FIPS 204)"
+
+  - key: SIGNATURE_AUTH_LONG_LIVED
+    algorithm: SLH-DSA
+    standard: FIPS 205
+    hybrid: false
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'How it is built' table"
+    quote: "Long-lived, low-frequency signing (firmware, roots) | **SLH-DSA** (FIPS 205), or LMS/XMSS where stateful is acceptable"
+
+  - key: SIGNATURE_AUTH_LONG_LIVED
+    algorithm: LMS/XMSS
+    standard: "stateful hash-based"
+    hybrid: false
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'How it is built' table"
+    quote: "**SLH-DSA** (FIPS 205), or LMS/XMSS where stateful is acceptable"
+    note: "Stateful: only where key-state management is acceptable."
+
+  # Deliberately absent: an option set for ENCRYPTION (symmetric). Part 8's
+  # table names none, because symmetric encryption is a Grover key-size
+  # question and not an algorithm replacement. A row invented here would
+  # produce a confident recommendation from a purpose Part 8 does not cover.
+
+# --- why hybrid on one clock and not the other ------------------------------
+
+hybrid_rationale:
+  - key: why_hybrid_kex_not_signatures
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8"
+    quote: >-
+      recorded traffic can be decrypted later, so confidentiality needs
+      protection *today* — hence hybrid KEM. A signature is verified in real
+      time; there is nothing to harvest, so the only risk is future forgery,
+      and hybrid signatures double an already large size cost.
+
+# --- policy profiles (parameter sets) ---------------------------------------
+
+profiles:
+  - key: NIST_L3
+    label: "NIST Level 3 (internet default)"
+    parameter_sets:
+      ML-KEM: ML-KEM-768
+      ML-DSA: ML-DSA-65
+    usable: true
+    default: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, Caveats"
+    quote: "the internet defaults to NIST Level 3 (ML-KEM-768, ML-DSA-65)"
+
+  - key: CNSA_2_0
+    label: "NSA CNSA 2.0 (Level 5 only)"
+    parameter_sets:
+      ML-KEM: ML-KEM-1024
+      ML-DSA: ML-DSA-87
+    firmware_signing: LMS/XMSS
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, Caveats"
+    quote: "**NSA CNSA 2.0 mandates Level 5 only** (ML-KEM-1024, ML-DSA-87) and LMS/XMSS for firmware signing"
+
+# --- cost model (problem-statement clause iv) -------------------------------
+#
+# Part 8: "A simple lookup table keyed on algorithm + parameter set, no
+# modelling required." Sizes are bytes. Nothing here is interpolated between
+# rows, and no row is derived from another.
+
+costs:
+  - key: ML-KEM-768
+    public_key_bytes: 1184
+    ciphertext_bytes: 1088
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, cost model table"
+    quote: "ML-KEM-768 encapsulation key / ciphertext | 1,184 B / 1,088 B"
+
+  - key: ML-DSA-65
+    public_key_bytes: 1952
+    signature_bytes: 3309
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, cost model table"
+    quote: "ML-DSA-65 public key / signature | 1,952 B / 3,309 B"
+
+  - key: ML-DSA-87
+    public_key_bytes: 2592
+    signature_bytes: 4627
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, cost model table"
+    quote: "ML-DSA-87 public key / signature | 2,592 B / 4,627 B"
+
+  - key: SLH-DSA
+    signature_bytes_low: 7987
+    signature_bytes_high: 50176
+    approximate: true
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, cost model table"
+    quote: "SLH-DSA signature | ~7.8 KB – 49 KB"
+    note: >-
+      The source states a range in KB with a tilde. Reported as a range and
+      flagged approximate; never collapsed to a single number.
+
+  - key: X25519MLKEM768
+    client_key_share_bytes: 1216
+    baseline_key_share_bytes: 32
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, cost model table"
+    quote: "X25519MLKEM768 client key share vs X25519 | **1,216 B vs 32 B**"
+
+  - key: ECDSA-P-256-baseline
+    public_key_bytes: 64
+    signature_bytes_low: 64
+    signature_bytes_high: 72
+    approximate: true
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, cost model table"
+    quote: "ECDSA P-256 key / signature (baseline) | ~64 B / ~64–72 B"
+
+# --- known breakage precedent ------------------------------------------------
+#
+# Part 8: "Migration breakage risk belongs here, not in the scanner's risk
+# register." A recommendation that does not carry it is advice without a
+# warning label.
+
+breakage:
+  - key: pq_key_share_handshake_failure
+    measured_failure_rate: 0.0034
+    applies_to: X25519MLKEM768
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8"
+    quote: >-
+      a ~1.2 KB ClientHello crosses the single-TCP-segment / MTU boundary, and
+      Cloudflare measured **~0.34% of scanned origins failing the TLS
+      handshake** when sent a post-quantum key share first, because of
+      ossified middleboxes and servers assuming a one-packet ClientHello.
+
+# --- standards status --------------------------------------------------------
+
+standards_status:
+  - key: fips_203_204_205
+    status: FINALISED
+    date: 2024-08-13
+    usable: true
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'Standards status'"
+    quote: "FIPS 203 / 204 / 205 finalised **13 Aug 2024**."
+
+  - key: fips_206_fn_dsa
+    status: DRAFT
+    usable: false
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'Standards status'"
+    why_not_usable: >-
+      FIPS 206 (FN-DSA, Falcon-based) is still draft, so it is recorded and
+      never recommended. Lock §9 also lists "FIPS 206 / HQC status recheck
+      before finals" as an open action.
+
+  - key: hqc_backup_kem
+    status: SELECTED_STANDARD_IN_DEVELOPMENT
+    usable: false
+    citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'Standards status'"
+    why_not_usable: >-
+      HQC was selected March 2025 as a code-based backup KEM but the standard
+      is still in development. Recorded so its absence is deliberate.

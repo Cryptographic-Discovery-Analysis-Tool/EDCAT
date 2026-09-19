@@ -1,0 +1,2 @@
+nassl 5.4.0
+key types: ['DH', 'EC', 'X25519', 'X448', 'RSA', 'DSA', 'RSA_PSS']

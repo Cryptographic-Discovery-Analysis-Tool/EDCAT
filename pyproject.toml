@@ -6,12 +6,21 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.10",
     "pyyaml>=6.0",
+    # CycloneDX 1.6 export is validated against the bundled schema
+    # (schemas/cyclonedx-1.6.schema.json), never against a fetched one.
+    # >=4.18 for the `referencing` registry API.
+    "jsonschema>=4.18",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "hypothesis>=6.100",
+    "httpx>=0.27",
+]
+api = [
+    "fastapi>=0.110",
+    "uvicorn>=0.30",
 ]
 ui = [
     "flask>=3.0",
