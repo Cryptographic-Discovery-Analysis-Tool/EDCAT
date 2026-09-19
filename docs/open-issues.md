@@ -369,3 +369,53 @@ See `tests/unit/risk/test_exposure_ledger.py::_m_case`.
 observed MigrationEvidence -- which would be a real design change, because a
 scheduled date is a declaration and §5.7 is explicit that declarations never
 stop the clock.
+
+---
+
+## OI-012 — §9 VERIFY 3 resolved: schema-validated writer, not cyclonedx-python-lib (2026-09-19)
+
+**Status:** CLOSED.
+
+`Pramana_Ledger_Spec.md` §9 item 3 asks whether `cyclonedx-python-lib`
+supports 1.6 `cryptoProperties`, and states the fallback itself: "else:
+schema-validated JSON writer, already sufficient".
+
+**Decision:** the schema-validated JSON writer, taken directly rather than
+after testing the library. Reasons, in order:
+
+1. The bundled `schemas/cyclonedx-1.6.schema.json` is the authority either
+   way. A library that produced output failing that schema would be wrong,
+   and one that passed it adds nothing we are not already checking.
+2. §5.11 requires the exposure facts to travel as `pramana:*` properties, not
+   as CycloneDX fields. Every library model would have to be escape-hatched
+   into a generic property list regardless.
+3. One fewer dependency in an air-gapped, source-delivered build.
+
+`jsonschema>=4.18` is now a runtime dependency; nothing else was added.
+
+**Consequence to watch:** we are responsible for 1.6 conformance ourselves. If
+the spec revises, `schemas/` must be updated and the export tests re-run --
+there is no library upgrade that would do it for us.
+
+---
+
+## OI-013 — signed export (JSF) is not implemented (2026-09-19)
+
+**Status:** OPEN, deliberately deferred.
+
+§3 lists "signed export (VERIFY JSF field)" and §9 item 5 asks us to verify
+CycloneDX's JSF `signature` field. Neither is done. The export emits no
+`signature` and makes no integrity claim about itself beyond
+`pramana:exposure:inputs_sha256` on each row, which covers the INPUTS to a
+calculation, not the document.
+
+**Why deferred, not forgotten:** signing needs a key, and a key needs a
+custody story -- where it lives, who can use it, how it is rotated, and what a
+verifier is supposed to trust. §8's definition of finished lists "encrypted
+export" and "signed offline update bundle" under hardening, alongside RBAC and
+the audit log, which is where that story belongs. Bolting a signature on now
+would produce a document that looks authenticated and is not.
+
+**Blocker for:** §8 item 4 is satisfied without it (schema validity, the
+undetermined bucket, no key bytes, third-party round-trip) so this does not
+block phase 6. It does block claiming "signed export" anywhere public.

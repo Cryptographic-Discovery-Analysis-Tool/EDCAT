@@ -211,7 +211,7 @@ pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-That runs 195 tests, including all 18 worked examples from the frozen
+That runs 222 tests, including all 18 worked examples from the frozen
 specification. The calculation engine is real and fully tested. **The part that
 goes and looks at your actual systems is not finished yet** — see the checklist.
 
@@ -234,6 +234,9 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [x] **The to-do list generator** — every unknown becomes a specific, smallest-possible task
 - [x] **All 18 worked examples from the spec pass**
 - [x] **Source code scanner** — finds encryption in Java (our own rules, not borrowed ones)
+- [x] **Standard report export** — writes a CycloneDX 1.6 file, checked against the official schema, with a "could not determine" list so silence is never read as "all clear"
+- [x] **Import other tools' reports** — reads any CycloneDX 1.6 file as evidence, recorded as *someone told us*, never as *we saw it*
+- [x] **Leak guard on export** — refuses to write a file that looks like it contains key material
 - [x] **Automated checks** — no uncited number anywhere in the data files
 
 ### Not done yet
@@ -244,9 +247,8 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [ ] **Container and package scanning**
 - [ ] **Hardware security module and cloud key reader**
 - [ ] **Compiled binary scanning**
-- [ ] **Standard report export** — CycloneDX file you can hand to another tool
-- [ ] **Import other tools' reports** — treat their findings as evidence
 - [ ] **Dashboard** — proper web interface (there is a rough prototype)
+- [ ] **Signed export** — the report is not signed yet, so it proves nothing about who wrote it
 - [ ] **Accuracy scoring** — measure and publish our own error rates on a test environment
 - [ ] **Upgrade recommendations** — what to move to, per use
 - [ ] **Packaging** — one-command install, offline, no internet access required

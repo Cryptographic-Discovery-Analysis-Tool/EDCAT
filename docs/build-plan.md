@@ -208,7 +208,7 @@ ledger phases are recorded here rather than left to float in another document:
 | 3 Scenario engine | `risk/scenarios.py`, `context/binding.py`, `data/scenarios.yaml`, `data/data_lifetime.yaml`, `data/crypto_families.yaml` | implemented, unit-green |
 | 4 Exposure ledger | `risk/confidentiality_ledger.py`, `risk/authentication_ledger.py`, `risk/record.py` | implemented, all of §6 green |
 | 5 Closure engine | `closure/engine.py`, `data/closure_catalog.yaml` | implemented, unit-green |
-| 6 CBOM export | `export/cyclonedx.py` | not started |
+| 6 CBOM export | `export/cyclonedx.py` | implemented, unit-green; signed export deferred (OI-013) |
 | 7 Dashboard | `ui/` | prototype only (Flask replay form) |
 | 8 Harness scoring | `ground-truth/exposure.expected.yaml`, `score_run.py` extension | not started |
 
