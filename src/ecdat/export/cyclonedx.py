@@ -28,7 +28,6 @@ to one would manufacture rows nobody observed.
 from __future__ import annotations
 
 import json
-import re
 import uuid
 from datetime import datetime
 from functools import lru_cache
@@ -42,6 +41,7 @@ from referencing.jsonschema import DRAFT7
 from pydantic import BaseModel, ConfigDict
 
 from ecdat.model.epistemic import EpistemicState
+from ecdat.security.secrets import SecretLeakError, scan_for_secrets
 from ecdat.model.usage_context import CryptoFunction
 from ecdat.risk.record import CalculationRecord, ExposureBand
 
@@ -52,15 +52,6 @@ _SCHEMA_FILE = "cyclonedx-1.6.schema.json"
 
 class SchemaValidationError(ValueError):
     """The document does not validate against the bundled 1.6 schema."""
-
-
-class SecretLeakError(ValueError):
-    """Serialised output contains something that looks like key material.
-
-    A hard failure, not a warning. CLAUDE.md: "No private key / secret bytes
-    in DB, logs, CLI output, CBOM, test snapshots." An export that leaks a key
-    is worse than no export.
-    """
 
 
 # --- schema validation ------------------------------------------------------
@@ -112,36 +103,6 @@ def validate(document: dict[str, Any]) -> None:
             for error in errors[:5]
         )
         raise SchemaValidationError(f"{len(errors)} schema error(s): {detail}")
-
-
-# --- secret-leak scan -------------------------------------------------------
-
-#: PEM armour for anything private, plus the obvious credential spellings.
-#: Deliberately blunt: a false positive costs one investigation, a false
-#: negative ships a key.
-_SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("PEM private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
-    ("PEM encrypted block", re.compile(r"-----BEGIN ENCRYPTED [A-Z ]*-----")),
-    ("OpenSSH private key", re.compile(r"-----BEGIN OPENSSH PRIVATE KEY-----")),
-    ("PGP private key", re.compile(r"-----BEGIN PGP PRIVATE KEY BLOCK-----")),
-    ("credential assignment", re.compile(r"(?i)\b(password|passphrase|secret_key|api[_-]?key)\s*[=:]\s*\S")),
-    ("PKCS#8 marker", re.compile(r"\bMIIE[A-Za-z0-9+/]{40,}")),
-)
-
-
-def scan_for_secrets(serialised: str) -> None:
-    """Raise SecretLeakError if the output looks like it carries key material.
-
-    Run on the SERIALISED text, not the object tree: the point is to check
-    what actually leaves the process, including anything a nested structure
-    stringified on the way out.
-    """
-    hits = [name for name, pattern in _SECRET_PATTERNS if pattern.search(serialised)]
-    if hits:
-        raise SecretLeakError(
-            "refusing to emit: output matched " + ", ".join(hits) + ". "
-            "Only locations and fingerprints may be exported (CLAUDE.md)."
-        )
 
 
 # --- the property map (§5.11) -----------------------------------------------
@@ -297,7 +258,7 @@ def to_json(document: dict[str, Any], *, indent: int = 2) -> str:
     """
     validate(document)
     serialised = json.dumps(document, indent=indent, sort_keys=False, ensure_ascii=False)
-    scan_for_secrets(serialised)
+    scan_for_secrets(serialised, context="CycloneDX export")
     return serialised
 
 

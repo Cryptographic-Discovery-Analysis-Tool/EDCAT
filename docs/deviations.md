@@ -106,3 +106,42 @@ of leap days.
 exactly. The §5.4 requirement "pure date arithmetic; no hidden constants" is
 strengthened, not weakened: there is no 365.2425 anywhere. Export (§5.11) must
 serialise the unit alongside the number.
+
+## DEV-004 — the TLS adapter runs two probes, not one (2026-09-19)
+
+**Issue.** `Pramana_Ledger_Spec.md` §3 names sslyze as the TLS sensor, and
+§7.1 P4 requires "negotiated suite and group recorded — the ledger's input".
+`src/ecdat/adapters/tls/` runs sslyze **and** an `openssl s_client` probe.
+
+**Evidence.** sslyze 6.2.0 cannot report a hybrid post-quantum group. Its TLS
+stack is nassl 5.4.0, whose key-type enum is exactly `DH, EC, X25519, X448,
+RSA, DSA, RSA_PSS` — no ML-KEM member exists, so nothing can be reported.
+Measured against the live Tier A endpoint: OpenSSL 3.5.8 negotiated
+`X25519MLKEM768` with it; sslyze scanning the same endpoint listed only
+classical curves. Full working in OI-017.
+
+So §3's tool choice and §7.1's requirement are in conflict, and the
+requirement is the load-bearing one: without the negotiated group there is no
+§5.7 evidence, no clock ever stops, and a completed migration is invisible.
+
+**Options.** (a) Drop the group requirement and band every surface from
+offered suites — rejected: it makes BLEEDING permanent and unfalsifiable.
+(b) Wait for nassl to add ML-KEM — rejected: it makes the ledger's central
+claim depend on someone else's roadmap. (c) Patch or fork nassl — rejected:
+maintaining a TLS stack is not this project's business. (d) Add a second,
+minimal probe that reads the negotiated group from a modern OpenSSL — chosen.
+
+**Impact.** `TlsProbeBundle` carries three captures: sslyze JSON, a
+full-offer `s_client` handshake, and a classical-only `s_client` handshake.
+The third is what makes a migration falsifiable — an endpoint that negotiates
+hybrid *and* still completes when offered only classical has stopped nothing,
+and that is the Tier A endpoint's actual state today.
+
+sslyze keeps the job it is good at (certificate chain, accepted suites, curve
+enumeration) and keeps its separate-process boundary, so the AGPL-3.0
+reasoning in §3 is untouched. The visibility entry names the ceiling in words
+on every run, so a reader is never left thinking the curve list was exhaustive.
+
+`tools/prober/Dockerfile` pins the prober's own TLS stack for the same reason
+OI-014 gives: a scanner whose results depend on the host distribution's
+OpenSSL is not reproducible.

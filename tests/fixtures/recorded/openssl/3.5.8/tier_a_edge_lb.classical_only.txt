@@ -1,0 +1,12 @@
+Connecting to 172.18.0.3
+depth=1 O=Harness Intermediate CA (ECC), CN=Harness Intermediate CA ECC
+verify error:num=20:unable to get local issuer certificate
+CONNECTION ESTABLISHED
+Protocol version: TLSv1.3
+Ciphersuite: TLS_AES_256_GCM_SHA384
+Peer certificate: O=Harness Payments, CN=pay-edge
+Hash used: SHA256
+Signature type: ecdsa_secp256r1_sha256
+Verification error: unable to get local issuer certificate
+Peer Temp Key: X25519, 253 bits
+DONE

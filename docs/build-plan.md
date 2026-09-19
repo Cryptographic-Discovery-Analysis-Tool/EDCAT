@@ -203,6 +203,7 @@ ledger phases are recorded here rather than left to float in another document:
 
 | Phase | Deliverable | State (2026-09-19) |
 |---|---|---|
+| P4 Certs + TLS | `adapters/certs/`, `adapters/tls/`, `tools/prober/` | implemented, unit-green against fixtures recorded from the live Tier A endpoint; two probes per DEV-004 |
 | 1 Evidence model | `model/usage_context.py`, `model/temporal.py` | implemented, unit-green |
 | 2 Function resolution | `function/classifier.py` + 9 rule_ids | implemented, unit-green |
 | 3 Scenario engine | `risk/scenarios.py`, `context/binding.py`, `data/scenarios.yaml`, `data/data_lifetime.yaml`, `data/crypto_families.yaml` | implemented, unit-green |

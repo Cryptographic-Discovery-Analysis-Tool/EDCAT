@@ -211,7 +211,7 @@ pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-That runs 272 tests, including all 18 worked examples from the frozen
+That runs 306 tests, including all 18 worked examples from the frozen
 specification. The calculation engine is real and fully tested. **The part that
 goes and looks at your actual systems is not finished yet** — see the checklist.
 
@@ -242,11 +242,12 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [x] **Automated checks** — no uncited number anywhere in the data files
 - [x] **Linux build box** — Docker, Go, Maven, haproxy, SoftHSM2, YARA and all three scanners at their pinned versions, from one re-runnable script
 - [x] **A running test enterprise** — the reference containers build and run, and the load balancer answers a real TLS handshake
+- [x] **Certificate reader** — reads certificates from PEM, DER and PKCS#12 files. Holds private keys in memory and provably emits none
+- [x] **Live connection prober** — actually connects and records what was negotiated, from a stated vantage, and separately checks whether the old encryption still works
 
 ### Not done yet
 
-- [ ] **Certificate reader** — read certificates off disk
-- [ ] **Live connection prober** — actually connect and record what gets negotiated *(the single biggest gap. The build box and a live TLS endpoint now exist and handshakes have been taken by hand; what is missing is the adapter that turns one into evidence.)*
+- [ ] **Java keystore formats** — JKS and BCFKS are not read yet; they are reported as skipped, never as absent
 - [ ] **Config file resolver** — work out which setting actually wins
 - [ ] **Container and package scanning**
 - [ ] **Hardware security module and cloud key reader**
@@ -257,11 +258,139 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [ ] **Apache-2.0 licence file**
 - [ ] **Rename repository** `ecdat` → `pramana`
 
-**Honest summary:** the thinking is built and tested. The looking is still
-being wired up. As of 19 Sep 2026 there is a working Linux build box running
-the reference enterprise, and the first real TLS handshake has been taken —
-see [docs/build-box.md](docs/build-box.md). The scanners are installed at
-their pinned versions; connecting them to the ledger is the next step.
+**Honest summary:** the thinking is built and tested, and as of 19 Sep 2026
+two of the seven sensors are real: it reads certificates off disk, and it
+connects to a live endpoint and records what was actually negotiated. Those
+feed the ledger directly. The remaining five sensors — config files,
+containers, packages, hardware modules and compiled binaries — are not built.
+Nothing here has been run against a production network.
+
+---
+
+## Why "Pramāṇa"
+
+Sanskrit, from Indian philosophy: *the means by which one arrives at valid
+knowledge* — and the study of what separates knowing something from merely
+believing it. That is the entire design brief. Every answer here has to say how
+it knows.
+
+---
+
+## Licence
+
+Apache-2.0 intended. **The licence file is not in the repository yet** — until
+it is, no open-source licence has actually been granted. It is on the checklist.
+
+## For developers
+
+- `docs/architecture/Pramana_Ledger_Spec.md` — the frozen specification
+- `CLAUDE.md` — the rules this codebase is built under
+- `docs/deviations.md` — every place the code departs from the spec, and why
+- `docs/open-issues.md` — every question still open
+- `docs/build-plan.md` — phases and what state each is in
+
+---
+
+## How to use it
+
+Three things you can do today. Every command is copy-pasteable.
+
+### 1. Run the tests
+
+Proves the calculation engine works, including all 18 worked examples from the
+specification. Needs nothing but Python 3.12+.
+
+```bash
+pip install -e ".[dev,api]"
+```
+
+```bash
+python -m pytest -q
+```
+
+### 2. Open the dashboard
+
+```bash
+cd ui/dashboard && npm install && npm run build && cd ../..
+```
+
+```bash
+python -m uvicorn ecdat.api.app:app --port 8000
+```
+
+Then open <http://127.0.0.1:8000>.
+
+It opens on **fixture data** — constructed evidence used to exercise every
+verdict. The page says so at the top. Things worth trying:
+
+- Change **"When is Z?"** and watch verdicts move between BLEEDING and SAVABLE.
+- Switch **"Assume recording since"** to `SINCE_POSSIBLE` — a row that said
+  "we cannot answer yet" becomes answerable.
+- Click any row for the evidence behind it, including a live re-run proving
+  the answer is reproducible.
+- **Move to** shows what to migrate each key to, with byte costs.
+- **Export CycloneDX 1.6** downloads a report other tools can read.
+
+### 3. Read real certificates
+
+Points the certificate reader at a folder and prints what it finds. It never
+prints key material — that is enforced, not promised.
+
+```bash
+python -c "
+from ecdat.adapters.base import ScanTarget
+from ecdat.adapters.certs.adapter import CertificateAdapter
+from ecdat.model.evidence import ConfidenceBasis
+
+basis = ConfidenceBasis(source='ADAPTER_DECLARED', justification='Read directly from an artefact; no cited confidence table exists yet.')
+result = CertificateAdapter(base_confidence=0.95, confidence_basis=basis).run(
+    ScanTarget(target_id='certs', locator='PUT_A_FOLDER_PATH_HERE'))
+
+print(f'{len(result.findings)} certificate(s), {len(result.coverage.skipped)} file(s) skipped')
+for f in result.findings:
+    print(' ', f.fields['subject'].value, '|', f.fields['public_key_algorithm'].value, '|', f.fields['der_sha256'].value[:16])
+"
+```
+
+Add `keystore_password=b'...'` to read a `.p12` keystore.
+
+---
+
+## Running the test enterprise (Linux, optional)
+
+This part needs Docker and a Linux machine or WSL. It builds a small fake
+company — an app, a load balancer, a certificate authority — so the prober has
+something real to talk to.
+
+**Set up the machine once** (installs Docker, Go, Maven, haproxy, SoftHSM2 and
+the three scanners at their pinned versions):
+
+```bash
+sudo bash tools/provision/build-box.sh
+```
+
+**Start it:**
+
+```bash
+cd ../ecdat-harness/harness/compose && docker compose up -d
+```
+
+**Probe it.** The endpoint sits on a no-egress network on purpose, so you
+connect from a container on that same network — which is also the only vantage
+a real deployment would have:
+
+```bash
+IP=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$v.IPAddress}}{{end}}' ecdat-harness-tier-a-edge-lb-1)
+docker run --rm --network ecdat-harness-tier-a_payments-internal alpine/openssl s_client -connect "$IP:8443" -brief </dev/null
+```
+
+You should see `Negotiated TLS1.3 group: X25519MLKEM768`.
+
+**One gotcha:** run the start and the probe in the *same* terminal session. If
+a WSL session ends, the distro can shut down and take the containers with it.
+
+Full details, including what the first real handshake revealed:
+[docs/build-box.md](docs/build-box.md).
 
 ---
 

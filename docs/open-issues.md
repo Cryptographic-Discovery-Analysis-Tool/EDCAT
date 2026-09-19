@@ -555,3 +555,50 @@ so, `haproxy.cfg` needs an explicit TLS 1.3 group restriction and this becomes
 a harness fix. If the accidental hybrid is left in place, it should be
 promoted to a deliberate, documented Tier A property — it is a better test
 asset than the classical-only endpoint the harness thought it had.
+
+---
+
+## OI-017 — sslyze 6.2.0 cannot see a hybrid PQ group. §9 VERIFY 1 answered: NO (2026-09-19)
+
+**Status:** ANSWERED. The question is closed; the consequence is a design
+change, filed as DEV-004.
+
+§9 VERIFY item 1 asked whether "sslyze 6.2.0 reports `X25519MLKEM768` as a
+negotiated/offered group (recorded probe used `CERTIFICATE_INFO` only —
+FACT)". Tested against the live Tier A endpoint. **It does not, and it
+cannot.**
+
+**Measured, same endpoint, minutes apart:**
+
+```
+openssl s_client (OpenSSL 3.5.8)   Negotiated TLS1.3 group: X25519MLKEM768
+sslyze 6.2.0 --elliptic_curves     supported_curves: X25519, X448,
+                                   secp256r1, secp384r1, secp521r1
+```
+
+**Root cause, read off the library rather than inferred.** sslyze's TLS stack
+is nassl 5.4.0, whose complete key-type vocabulary is:
+
+```
+DH, EC, X25519, X448, RSA, DSA, RSA_PSS
+```
+
+There is no ML-KEM member. sslyze has no name for a hybrid group, so there is
+nothing for it to report even when the handshake uses one. This is a ceiling
+in the tool, not a configuration or base-image problem: no flag and no newer
+image changes it. Fixture:
+`tests/fixtures/recorded/openssl/3.5.8/nassl_key_type_ceiling.txt`.
+
+**Why it matters more than it looks.** The negotiated group is the single
+input that can stop an exposure clock (§5.7). With sslyze as the only TLS
+probe, no endpoint would ever be observed refusing classical, no clock would
+ever stop, and every surface would sit at BLEEDING forever. That fails in the
+*safe* direction — it under-claims — but it would make the tool structurally
+incapable of recognising a migration that actually happened, which is the
+thing the whole ledger exists to track.
+
+**Resolution:** the TLS adapter runs two probes. See DEV-004.
+
+**Not attempted:** whether a later sslyze/nassl adds ML-KEM. When one does,
+the second probe can be dropped and `NASSL_KEY_TYPES` in
+`adapters/tls/parser.py` re-recorded from the new library.
