@@ -240,11 +240,13 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [x] **Upgrade recommendations** — what to move to, chosen by what the key is *doing*, with the size cost and the known breakage rate attached
 - [x] **Dashboard** — web interface showing the ledger, the evidence behind each verdict, the to-do queue and coverage, with the Z date and the recording assumption as controls you can move
 - [x] **Automated checks** — no uncited number anywhere in the data files
+- [x] **Linux build box** — Docker, Go, Maven, haproxy, SoftHSM2, YARA and all three scanners at their pinned versions, from one re-runnable script
+- [x] **A running test enterprise** — the reference containers build and run, and the load balancer answers a real TLS handshake
 
 ### Not done yet
 
 - [ ] **Certificate reader** — read certificates off disk
-- [ ] **Live connection prober** — actually connect and record what gets negotiated *(this is the single biggest gap: it is what feeds real observations into everything above)*
+- [ ] **Live connection prober** — actually connect and record what gets negotiated *(the single biggest gap. The build box and a live TLS endpoint now exist and handshakes have been taken by hand; what is missing is the adapter that turns one into evidence.)*
 - [ ] **Config file resolver** — work out which setting actually wins
 - [ ] **Container and package scanning**
 - [ ] **Hardware security module and cloud key reader**
@@ -255,9 +257,11 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [ ] **Apache-2.0 licence file**
 - [ ] **Rename repository** `ecdat` → `pramana`
 
-**Honest summary:** the thinking is built and tested. The looking is not. Nothing
-above has been run against a real system yet — everything is proven against the
-worked examples in the specification.
+**Honest summary:** the thinking is built and tested. The looking is still
+being wired up. As of 19 Sep 2026 there is a working Linux build box running
+the reference enterprise, and the first real TLS handshake has been taken —
+see [docs/build-box.md](docs/build-box.md). The scanners are installed at
+their pinned versions; connecting them to the ledger is the next step.
 
 ---
 
