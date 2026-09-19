@@ -1,0 +1,92 @@
+# Which key-establishment / key-transport families the confidentiality ledger
+# applies to (Pramana_Ledger_Spec.md §5.5: "Applies only to Shor-broken
+# confidentiality functions"; band rule "not Shor-broken, or HYBRID_KEX from
+# start -> SAFE").
+#
+# Same rule as data/base_confidence.yaml: a row is `usable: true` ONLY when
+# `citation` points at a non-empty in-repo source that states the literal
+# classification, and `quote` reproduces it. No row is added from memory, and
+# no family is classified by pattern-matching its name.
+#
+# The citable in-repo source is the frozen deterministic test set
+# (Pramana_Ledger_Spec.md §6), which states each family's ledger treatment
+# directly: an expected band IS the classification.
+schema_version: 1
+
+families:
+  - key: RSA
+    shor_broken: true
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 2"
+    quote: "RSA static key transport, X=7y, since 2021-01-01 | central: SAVABLE, deadline 2029-01-01"
+    note: >-
+      The row is in the confidentiality ledger at all, and its deadline is
+      Z - X, which is the Shor-broken treatment. RSA's signature use is on the
+      authentication clock instead (§6 row 1).
+
+  - key: X25519
+    shor_broken: true
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 3"
+    quote: "X25519 ECDHE, X=25y, since 2021-01-01 | all Z: BLEEDING, unsavable [2021-01-01, as_of]"
+
+  - key: P-256
+    shor_broken: true
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 4"
+    quote: "P-256 ECDHE, X=1y | central: SAVABLE (deadline 2035)"
+
+  - key: ML-KEM
+    shor_broken: false
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §3, row 'Recommendation'"
+    quote: "purpose-keyed option sets (FIPS 203/204/205, hybrid X25519MLKEM768)"
+    note: >-
+      Named as the PQC option set, i.e. the thing migration moves TO. §5.5's
+      "not Shor-broken ... -> SAFE" is the corresponding band.
+
+  - key: DH
+    shor_broken: true
+    usable: false
+    status: NOT_STATED_IN_REPO
+    citation: "docs/architecture/Pramana_Ledger_Spec.md -- searched, no row"
+    why_not_usable: >-
+      Finite-field Diffie-Hellman appears in no frozen test row and in no
+      in-repo table. It is universally taken to be Shor-broken, but this
+      registry does not accept "universally taken to be": a context whose
+      family resolves to DH gets function KEY_ESTABLISHMENT and an UNBOUNDED
+      band with a closure task, not a guessed SAFE or a guessed BLEEDING.
+      TODO-VERIFY: cite NIST IR 8547 once it is vendored into docs/.
+
+# Groups negotiated on the wire that are hybrid key establishment.
+hybrid_groups:
+  - key: X25519MLKEM768
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.1"
+    quote: "negotiated `X25519MLKEM768` -> HYBRID_KEX (Observed)"
+
+# Registry spellings of the SAME curve. These are naming identities, not risk
+# claims: they assert only that two strings name one object, which is why they
+# carry `basis: NAMING_IDENTITY` and are kept apart from the `families` rows
+# above. An unlisted spelling stays unresolved and produces a closure task.
+family_aliases:
+  - key: secp256r1
+    family: P-256
+    usable: true
+    basis: NAMING_IDENTITY
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 4 ('P-256 ECDHE')"
+    quote: "P-256 ECDHE, X=1y"
+    note: >-
+      sslyze and OpenSSL report this curve as `secp256r1` / `prime256v1`; the
+      frozen test set names it `P-256`. Same curve, three spellings.
+  - key: prime256v1
+    family: P-256
+    usable: true
+    basis: NAMING_IDENTITY
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 4 ('P-256 ECDHE')"
+    quote: "P-256 ECDHE, X=1y"
+
+# Searched for and NOT found (recorded so the next person does not re-search):
+#   - SecP256r1MLKEM768 / SecP384r1MLKEM1024: named in no in-repo document.
+#     Adding them by analogy with X25519MLKEM768 would be exactly the
+#     interpolation data/base_confidence.yaml forbids.

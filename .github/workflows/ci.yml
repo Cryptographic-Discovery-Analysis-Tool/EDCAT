@@ -17,8 +17,29 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install guard dependencies
+        run: python -m pip install pyyaml
+
       - name: Architecture docs must not change without an ADR
         run: python tools/ci/check_architecture_hashes.py
 
       - name: No harness identifiers in src/ or rules/
         run: python tools/ci/check_no_harness_identifiers.py
+
+      - name: No uncited constant in data/
+        run: python tools/ci/check_data_citations.py
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+
+      - name: pytest
+        run: python -m pytest -q

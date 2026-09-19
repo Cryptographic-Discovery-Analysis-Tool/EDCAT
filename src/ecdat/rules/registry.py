@@ -94,3 +94,122 @@ register(
 # rule_id, unlike IDENTITY-CERT-DER-001. No rule_id is registered for it here
 # -- inventing one (e.g. "IDENTITY-KEY-SPKI-001") would violate the
 # anti-hallucination rule. See docs/open-issues.md.
+
+
+# --- Exposure-ledger rule_ids (Pramana_Ledger_Spec.md) ----------------------
+# The Lock and harness §14-16 predate the exposure ledger and name none of
+# these. Their citable in-repo source is
+# docs/architecture/Pramana_Ledger_Spec.md (frozen post-red-team spec, hashed
+# in HASHES.lock). Section numbers below are that document's.
+
+register(
+    "TEMPORAL-POSSIBLE-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.2",
+    "possible_since = min(not_before, declared_go_live, "
+    "first_snapshot_containing) -- the earliest date the surface COULD have "
+    "been carrying traffic. Never evidence that it did.",
+)
+
+register(
+    "TEMPORAL-CONFIRMED-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.2",
+    "confirmed_since = earliest Observed traffic-path observation; a declared "
+    "go-live counts only when policy.accept_declared_go_live. notBefore alone "
+    "never confirms.",
+)
+
+register(
+    "FUNC-TLS-KEX-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.1",
+    "Negotiated ECDHE_*/DHE_* suite observed on the wire -> "
+    "KEY_ESTABLISHMENT on that surface's usage context.",
+)
+
+register(
+    "FUNC-TLS-KEYTRANSPORT-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.1",
+    "Negotiated TLS_RSA_* suite observed on the wire -> KEY_TRANSPORT (the "
+    "premaster secret is RSA-encrypted to the server key).",
+)
+
+register(
+    "FUNC-TLS-HYBRID-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.1",
+    "Negotiated hybrid group (e.g. X25519MLKEM768) observed -> HYBRID_KEX.",
+)
+
+register(
+    "FUNC-CERT-AUTH-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.1",
+    "Certificate presented in an observed handshake -> SIGNATURE_AUTH context "
+    "for that certificate's key, separate from the KEX context.",
+)
+
+register(
+    "FUNC-TLS-OFFERED-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.1",
+    "Suite offered but not negotiated -> INFERRED capability context only. "
+    "Never an observed usage.",
+)
+
+register(
+    "FUNC-KEYUSAGE-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.1",
+    "Certificate keyUsage / extendedKeyUsage bits -> INFERRED capability "
+    "context (what the key is permitted to do, not what it did).",
+)
+
+register(
+    "FUNC-SRC-KEYTRANSPORT-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.1",
+    "Source call site: Cipher in WRAP_MODE, or an RSA/... transformation -> "
+    "KEY_TRANSPORT. Algorithm may stay UNKNOWN while the function is known.",
+)
+
+register(
+    "FUNC-SRC-SIGNATURE-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.1",
+    "Source call site: java.security.Signature -> SIGNATURE_AUTH.",
+)
+
+register(
+    "FUNC-SRC-KEX-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.1",
+    "Source call site: javax.crypto.KeyAgreement -> KEY_ESTABLISHMENT.",
+)
+
+register(
+    "LEDGER-CONF-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.5",
+    "Confidentiality exposure band from (start, deadline = Z - X, M, as_of). "
+    "Applies only to Shor-broken confidentiality functions.",
+)
+
+register(
+    "LEDGER-AUTH-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.6",
+    "Authentication band from required_until = signed_at + A against Z and "
+    "the rollout window Y.",
+)
+
+register(
+    "LEDGER-HYBRID-CLOCK-001",
+    "inference",
+    "Pramana_Ledger_Spec.md §5.7",
+    "A surface's exposure clock stops only on an observed negotiation with "
+    "classical disabled, per vantage; a later classical observation reopens "
+    "it. Config-only evidence never stops the clock.",
+)

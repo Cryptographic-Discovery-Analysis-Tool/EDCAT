@@ -1,0 +1,57 @@
+# Z-date scenarios (Pramana_Ledger_Spec.md §5.4, §6).
+#
+# Z is the date a cryptographically relevant quantum computer is assumed
+# available. It is an ASSUMPTION the operator picks, never a prediction this
+# tool makes -- which is why there are three of them, every row says which one
+# it used, and the UI switches between them live. There is no probabilistic Z
+# (§5.12 rejects it): a probability distribution over Z would let a weighted
+# score creep back in through the side door.
+#
+# Same citation rule as data/base_confidence.yaml.
+schema_version: 1
+
+scenarios:
+  - id: Z_aggressive
+    label: Aggressive
+    z_date: 2031-01-01
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6"
+    quote: "Z_aggr 2031-01-01, Z_central 2036-01-01, Z_optim 2041-01-01 (test constants)"
+    basis: TEST_CONSTANT
+    verify: >-
+      OPEN (§9 item 2): the GRI Quantum Threat Timeline 2024 percentile behind
+      this date is not yet in-repo. The date is usable because the frozen test
+      set states it literally; `basis_citation` must not claim a GRI
+      percentile until that report is vendored and the percentile read off it.
+
+  - id: Z_central
+    label: Central
+    z_date: 2036-01-01
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6"
+    quote: "Z_aggr 2031-01-01, Z_central 2036-01-01, Z_optim 2041-01-01 (test constants)"
+    basis: TEST_CONSTANT
+    verify: "OPEN (§9 item 2) -- see Z_aggressive."
+    default: true
+
+  - id: Z_optimistic
+    label: Optimistic
+    z_date: 2041-01-01
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6"
+    quote: "Z_aggr 2031-01-01, Z_central 2036-01-01, Z_optim 2041-01-01 (test constants)"
+    basis: TEST_CONSTANT
+    verify: "OPEN (§9 item 2) -- see Z_aggressive."
+
+# Default rollout window Y: the time a signature-key rotation takes to reach
+# every relying party (§5.6, deadline Z - Y).
+policy_defaults:
+  - key: rollout_Y_days
+    value: 365
+    usable: false
+    status: NOT_STATED_IN_REPO
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.4 -- names rollout_Y_default, gives no number"
+    why_not_usable: >-
+      The spec makes Y a policy input and never states a default. A number
+      picked here would silently move every ROTATE_BEFORE_Z deadline, so
+      Policy requires rollout_Y_days explicitly and has no fallback.

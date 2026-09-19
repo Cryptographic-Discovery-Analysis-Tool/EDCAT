@@ -191,3 +191,28 @@ configuration-binding declaration and its prefix (`pay.keywrap`). Those two
 findings are the input the configuration adapter joins: call site → binding →
 `application.yml` → profile yml → deployment override. The join is the work; both
 ends already exist and are tested.
+
+---
+
+## Ledger phases 1–8 (added 2026-09-19)
+
+`docs/architecture/Pramana_Ledger_Spec.md` §7.2 introduces a second phase
+numbering for the exposure ledger, running 1–8 alongside the P0–P12 sensor
+phases above. CLAUDE.md says this file is the only phase numbering, so the
+ledger phases are recorded here rather than left to float in another document:
+
+| Phase | Deliverable | State (2026-09-19) |
+|---|---|---|
+| 1 Evidence model | `model/usage_context.py`, `model/temporal.py` | implemented, unit-green |
+| 2 Function resolution | `function/classifier.py` + 9 rule_ids | implemented, unit-green |
+| 3 Scenario engine | `risk/scenarios.py`, `context/binding.py`, `data/scenarios.yaml`, `data/data_lifetime.yaml`, `data/crypto_families.yaml` | implemented, unit-green |
+| 4 Exposure ledger | `risk/confidentiality_ledger.py`, `risk/authentication_ledger.py`, `risk/record.py` | implemented, all of §6 green |
+| 5 Closure engine | `closure/engine.py`, `data/closure_catalog.yaml` | implemented, unit-green |
+| 6 CBOM export | `export/cyclonedx.py` | not started |
+| 7 Dashboard | `ui/` | prototype only (Flask replay form) |
+| 8 Harness scoring | `ground-truth/exposure.expected.yaml`, `score_run.py` extension | not started |
+
+None of 1–5 is CLOSED: per CLAUDE.md a phase closes only when `ecdat scan`
+runs live on the Tier A target directory and `score_run.py` is re-run. They
+have no adapter feeding them yet. Ordering rationale and the environment
+constraint behind it: `docs/deviations.md` DEV-002.
