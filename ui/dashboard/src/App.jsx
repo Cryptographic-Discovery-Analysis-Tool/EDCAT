@@ -3,6 +3,7 @@ import Controls from './Controls.jsx'
 import Ledger from './Ledger.jsx'
 import Closure from './Closure.jsx'
 import Coverage from './Coverage.jsx'
+import Recommend from './Recommend.jsx'
 import EvidenceCard from './EvidenceCard.jsx'
 
 // Presentation only. Every band, window and deadline shown here is computed by
@@ -13,6 +14,7 @@ import EvidenceCard from './EvidenceCard.jsx'
 const TABS = [
   ['ledger', 'Ledger'],
   ['closure', 'Closure queue'],
+  ['recommend', 'Move to'],
   ['coverage', 'Coverage'],
 ]
 
@@ -25,9 +27,11 @@ export default function App() {
     accept_inferred: false,
     rollout_y_days: 365,
     as_of: '2026-09-18',
+    profile: 'NIST_L3',
   })
   const [tab, setTab] = useState('ledger')
   const [data, setData] = useState({ ledger: null, closure: null, coverage: null })
+  const [recommendations, setRecommendations] = useState(null)
   const [selected, setSelected] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -45,11 +49,22 @@ export default function App() {
   }, [policy])
 
   useEffect(() => {
-    fetch('api/scenarios')
-      .then((r) => r.json())
-      .then(setMeta)
+    Promise.all([
+      fetch('api/scenarios').then((r) => r.json()),
+      fetch('api/profiles').then((r) => r.json()),
+    ])
+      .then(([scenarios, profiles]) => setMeta({ ...scenarios, ...profiles }))
       .catch((e) => setError(String(e)))
   }, [])
+
+  // Recommendations depend only on the profile: what to move to is a function
+  // of what the key does, not of when Z is.
+  useEffect(() => {
+    fetch(`api/recommendations?profile=${policy.profile}`)
+      .then((r) => r.json())
+      .then(setRecommendations)
+      .catch((e) => setError(String(e)))
+  }, [policy.profile])
 
   useEffect(() => {
     let cancelled = false
@@ -130,6 +145,7 @@ export default function App() {
           <Ledger data={data.ledger} onSelect={openRecord} />
         )}
         {tab === 'closure' && data.closure && <Closure data={data.closure} />}
+        {tab === 'recommend' && recommendations && <Recommend data={recommendations} />}
         {tab === 'coverage' && data.coverage && <Coverage data={data.coverage} />}
       </main>
 

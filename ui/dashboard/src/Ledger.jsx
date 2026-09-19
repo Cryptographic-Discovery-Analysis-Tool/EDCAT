@@ -1,6 +1,25 @@
 import React from 'react'
 
-export const Band = ({ value }) => <span className={`band band-${value}`}>{value}</span>
+// A glyph per band, so the distinction survives a colour-blind reader, a
+// washed-out projector and a black-and-white printout. Bands are categories,
+// not a severity ramp -- the tags are drawn at equal weight on purpose.
+const GLYPH = {
+  BLEEDING: '●',
+  UNSAVABLE: '✕',
+  UNBOUNDED: '?',
+  SAVABLE: '◐',
+  SAFE: '✓',
+  SAFE_UNTIL_Z: '✓',
+  ROTATE_BEFORE_Z: '↻',
+  RESIGN_BEFORE_Z: '✎',
+}
+
+export const Band = ({ value }) => (
+  <span className={`band band-${value}`}>
+    <span className="glyph">{GLYPH[value] ?? '·'}</span>
+    {value}
+  </span>
+)
 
 export const Status = ({ value }) => (
   <span className={`status status-${value}`}>{value}</span>
@@ -38,49 +57,49 @@ export default function Ledger({ data, onSelect }) {
               <td>
                 <Band value={row.band} />
                 {row.qualifiers.map((q) => (
-                  <div key={q} className="small muted">
+                  <div key={q} className="small faint">
                     {q}
                   </div>
                 ))}
                 {row.conditional_band && (
-                  <div className="small muted">could be {row.conditional_band}</div>
+                  <div className="small faint">could be {row.conditional_band}</div>
                 )}
               </td>
               <td>
-                <div className="mono small">{row.surface_id}</div>
-                <div className="small muted">{row.asset_id}</div>
+                <div className="small">{row.surface_id}</div>
+                <div className="small faint">{row.asset_id}</div>
               </td>
               <td>
-                <div>
+                <div className="small">
                   {row.function} <Status value={row.function_status} />
                 </div>
-                <div className="small muted">
+                <div className="small faint">
                   {row.algorithm ?? 'algorithm unknown'}{' '}
                   {row.algorithm && <Status value={row.algorithm_status} />}
                 </div>
               </td>
               <td>
                 {row.windows.length === 0 ? (
-                  <span className="muted small">
-                    {row.band === 'UNBOUNDED' ? 'not derivable yet' : 'none'}
+                  <span className="faint small">
+                    {row.band === 'UNBOUNDED' ? 'not derivable yet' : '—'}
                   </span>
                 ) : (
                   row.windows.map((w, i) => (
-                    <div key={i} className="small mono">
+                    <div key={i} className="small">
                       {w.start} → {w.end}
-                      <span className="muted"> ({w.days} d)</span>
+                      <span className="faint"> {w.days}d</span>
                     </div>
                   ))
                 )}
               </td>
-              <td className="mono small">{row.deadline ?? <span className="muted">—</span>}</td>
+              <td className="small">{row.deadline ?? <span className="faint">—</span>}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <p className="small muted" style={{ marginTop: 14 }}>
-        Ordered worst first by category, never by a score. Click a row for the
+      <p className="small faint" style={{ marginTop: 16 }}>
+        Ordered worst first by category, never by a score. Select a row for the
         evidence behind it.
       </p>
     </>

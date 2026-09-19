@@ -259,3 +259,61 @@ def test_export_is_offered_as_a_download(client):
     r = client.get("/api/export", params=BASE)
     assert "attachment" in r.headers["content-disposition"]
     assert r.json()["specVersion"] == "1.6"
+
+
+# --- recommendations (Part 8) ------------------------------------------------
+
+
+def test_recommendations_need_no_scenario(client):
+    """What to move to depends on what the key does, not on when Z is."""
+    assert client.get("/api/recommendations").status_code == 200
+
+
+def test_recommendations_default_to_nist_level_3(client):
+    body = client.get("/api/recommendations").json()
+    assert body["profile"]["key"] == "NIST_L3"
+    kex = next(
+        r for r in body["recommendations"] if r["usage_context_id"] == "payments-api:tls:kex"
+    )
+    assert [o["parameter_set"] for o in kex["options"]] == ["ML-KEM-768", None]
+
+
+def test_switching_profile_moves_every_parameter_set(client):
+    body = client.get("/api/recommendations", params={"profile": "CNSA_2_0"}).json()
+    kex = next(
+        r for r in body["recommendations"] if r["usage_context_id"] == "payments-api:tls:kex"
+    )
+    assert kex["options"][0]["parameter_set"] == "ML-KEM-1024"
+
+
+def test_unknown_profile_is_a_404(client):
+    assert client.get("/api/recommendations", params={"profile": "NOPE"}).status_code == 404
+
+
+def test_undetermined_purposes_are_listed_separately(client):
+    body = client.get("/api/recommendations").json()
+    assert body["undetermined"] == ["unknown-appliance:tls:kex"]
+
+
+def test_the_hybrid_rationale_is_quoted_once_without_markdown(client):
+    body = client.get("/api/recommendations").json()
+    quote = body["hybrid_rationale"]["quote"]
+    assert "nothing to harvest" in quote
+    assert "*" not in quote, "source markdown must not reach the screen"
+
+
+def test_the_evidence_card_carries_the_recommendation(client):
+    card = client.get(
+        "/api/records/conf:payments-api:tls:kex:Z_central",
+        params=q(scenario="Z_central"),
+    ).json()
+    assert [o["algorithm"] for o in card["recommendation"]["options"]] == [
+        "ML-KEM",
+        "X25519MLKEM768",
+    ]
+
+
+def test_profiles_endpoint_cites_each_profile(client):
+    body = client.get("/api/profiles").json()
+    assert body["default"] == "NIST_L3"
+    assert all(p["citation"].startswith("docs/architecture/") for p in body["profiles"])

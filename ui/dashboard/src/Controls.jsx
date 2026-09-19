@@ -10,8 +10,11 @@ export default function Controls({ meta, policy, onChange, exportUrl, scenario }
   return (
     <aside className="sidebar">
       <div className="brand">
-        <h1>Pramāṇa</h1>
-        <p>Exposure ledger</p>
+        {/* The wordmark is set without diacritics because VT323 has no glyph
+            for them and falls back mid-word, which looks like a rendering
+            bug. The proper spelling sits underneath in IBM Plex Mono. */}
+        <h1>PRAMANA</h1>
+        <p>pramāṇa · exposure ledger</p>
       </div>
 
       <div className="field">
@@ -66,6 +69,25 @@ export default function Controls({ meta, policy, onChange, exportUrl, scenario }
         <p className="note">
           {meta?.rollout_y_note ??
             'No cited default exists. Whatever you set is your assumption.'}
+        </p>
+      </div>
+
+      <div className="field">
+        <label htmlFor="profile">Policy profile</label>
+        <select
+          id="profile"
+          value={policy.profile}
+          onChange={(e) => set({ profile: e.target.value })}
+        >
+          {(meta?.profiles ?? []).map((p) => (
+            <option key={p.key} value={p.key}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <p className="note">
+          Sets the parameter sets on the Move-to page. Does not touch any
+          verdict.
         </p>
       </div>
 

@@ -26,14 +26,12 @@ export default function EvidenceCard({ record, onClose }) {
 
   return (
     <div className="drawer">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+      <div className="drawer-head">
         <div>
           <h2>
             <Band value={record.band} />
           </h2>
-          <p className="mono small muted" style={{ margin: '6px 0 0' }}>
-            {record.record_id}
-          </p>
+          <p className="record-id">{record.record_id}</p>
         </div>
         <button className="ghost" onClick={onClose}>
           Close
@@ -186,6 +184,33 @@ export default function EvidenceCard({ record, onClose }) {
               <p className="small muted">{task.bounds}</p>
             </div>
           ))}
+        </section>
+      )}
+
+      {record.recommendation && (
+        <section>
+          <h3>Move to</h3>
+          {record.recommendation.options.length === 0 ? (
+            <p className="small muted">{record.recommendation.reason}</p>
+          ) : (
+            <>
+              {record.recommendation.options.map((o) => (
+                <div className="small" key={o.algorithm}>
+                  {o.algorithm}
+                  {o.parameter_set && <span className="faint"> / {o.parameter_set}</span>}
+                  {o.hybrid && <span className="muted"> · hybrid</span>}
+                  <span className="faint"> — {o.standard}</span>
+                </div>
+              ))}
+              {record.recommendation.options
+                .filter((o) => o.caveat)
+                .map((o) => (
+                  <p className="note small" key={`c-${o.algorithm}`}>
+                    {o.caveat}
+                  </p>
+                ))}
+            </>
+          )}
         </section>
       )}
 

@@ -29,6 +29,12 @@ from ecdat.closure.engine import closure_queue, tasks_for
 from ecdat.context.binding import Lifetime
 from ecdat.export.cyclonedx import build_bom
 from ecdat.model.epistemic import EpistemicState
+from ecdat.recommend.engine import (
+    NoCitedOptionError,
+    Profile,
+    hybrid_rationale,
+    recommend,
+)
 from ecdat.risk.record import CalculationRecord, ExposureBand, rank_key, replay
 from ecdat.risk.run import GroverFlag, LedgerSubject, RunResult, evaluate_run
 from ecdat.risk.scenarios import (
@@ -158,6 +164,7 @@ def _evidence_card(record: CalculationRecord) -> dict[str, Any]:
             "hash_stable": replayed.inputs_sha256 == record.inputs_sha256,
         },
         "closure_tasks": [task.model_dump(mode="json") for task in tasks_for(record)],
+        "recommendation": recommend(record.inputs.usage_context).model_dump(mode="json"),
     }
 
 
@@ -313,6 +320,45 @@ def create_app(
         as_of: date | None = Query(None),
     ) -> dict[str, Any]:
         return _coverage(run(scenario, capture, since, accept_inferred, rollout_y_days, as_of))
+
+    @app.get("/api/profiles")
+    def profiles() -> dict[str, Any]:
+        return {
+            "profiles": [
+                {
+                    "key": p.key,
+                    "label": p.label,
+                    "parameter_sets": p.parameter_sets,
+                    "firmware_signing": p.firmware_signing,
+                    "citation": p.citation,
+                }
+                for p in Profile.load_all()
+            ],
+            "default": Profile.default().key,
+        }
+
+    @app.get("/api/recommendations")
+    def recommendations(profile: str | None = Query(None)) -> dict[str, Any]:
+        """Part 8. Keyed on purpose, so it needs no scenario and no Z date --
+        what to move to does not depend on when Z is, only on what the key is
+        doing."""
+        try:
+            chosen = Profile.load(profile) if profile else Profile.default()
+        except NoCitedOptionError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        results = [recommend(subject, profile=chosen) for subject in provider()]
+        return {
+            "profile": {
+                "key": chosen.key,
+                "label": chosen.label,
+                "citation": chosen.citation,
+            },
+            "hybrid_rationale": hybrid_rationale(),
+            "recommendations": [r.model_dump(mode="json") for r in results],
+            "undetermined": [
+                r.usage_context_id for r in results if r.insufficient_evidence
+            ],
+        }
 
     @app.get("/api/export")
     def export(
