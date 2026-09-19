@@ -1,0 +1,81 @@
+# Data-class lifetimes (Pramana_Ledger_Spec.md §5.3).
+#
+# X = secrecy lifetime: how long the plaintext must stay secret from the
+#     moment it is sent. Drives the confidentiality deadline Z - X.
+# A = authenticity lifetime: how long a signature over an artefact must stay
+#     trustworthy. Drives required_until = signed_at + A.
+#
+# UNITS: rows state `years` or `days`, not both (see docs/deviations.md
+# DEV-003 -- §5.3 names the field `secrecy_lifetime_X_days`, but §6's own
+# expected dates are calendar-year arithmetic and a fixed day count cannot
+# reproduce them across different leap-year spans).
+#
+# §5.3: "rows in data/data_lifetime.yaml are usable only with a citation."
+# Every binding that uses a row records `cited_table_row`, so a ledger row can
+# be traced from a band back to the sentence that set its lifetime.
+#
+# The rows below are the frozen test constants from §6. They carry
+# `basis: TEST_CONSTANT` and are NOT a claim about what any real
+# organisation's retention policy says. A deployment replaces this file with
+# its own classification table, each row citing the policy document it came
+# from.
+schema_version: 1
+
+rows:
+  - key: TEST.X_25Y
+    classification: "long-lived secret (test constant)"
+    secrecy_lifetime_X: {years: 25}
+    usable: true
+    basis: TEST_CONSTANT
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 3"
+    quote: "X25519 ECDHE, X=25y, since 2021-01-01"
+
+  - key: TEST.X_7Y
+    classification: "medium-lived secret (test constant)"
+    secrecy_lifetime_X: {years: 7}
+    usable: true
+    basis: TEST_CONSTANT
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 2"
+    quote: "RSA static key transport, X=7y, since 2021-01-01"
+
+  - key: TEST.X_1Y
+    classification: "short-lived secret (test constant)"
+    secrecy_lifetime_X: {years: 1}
+    usable: true
+    basis: TEST_CONSTANT
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 4"
+    quote: "P-256 ECDHE, X=1y"
+
+  - key: TEST.X_10Y
+    classification: "decade secret (test constant)"
+    secrecy_lifetime_X: {years: 10}
+    usable: true
+    basis: TEST_CONSTANT
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 'M=2030 vs M=2038'"
+    quote: "M=2030 vs M=2038, Z=2036, X=10y, since 2020"
+
+  - key: TEST.A_15Y
+    classification: "long-lived signed artefact (test constant)"
+    secrecy_lifetime_X: {days: 0}
+    authenticity_lifetime_A: {years: 15}
+    usable: true
+    basis: TEST_CONSTANT
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 'Long-lived signed artefact'"
+    quote: "Long-lived signed artefact, signed 2026-01-01, A=15y | RESIGN_BEFORE_Z"
+
+  - key: TEST.A_SESSION
+    classification: "session authentication (test constant)"
+    secrecy_lifetime_X: {days: 0}
+    authenticity_lifetime_A: {days: 0}
+    usable: true
+    basis: TEST_CONSTANT
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.6"
+    quote: "`A == 0` (session) -> ROTATE_BEFORE_Z, deadline `Z - Y`"
+
+# Searched for and NOT found (recorded so the next person does not re-search):
+#   - Any real classification table (PII, cardholder data, national-security
+#     tiering) with stated retention years. The brief's item (iii) asks for
+#     classification "by type/lifetime/criticality"; no in-repo document
+#     states a single lifetime number. Until one does, a real binding is
+#     DECLARED by the operator through the API, or the row is UNBOUNDED with
+#     a closure task -- never filled in from a plausible-looking default.

@@ -319,3 +319,53 @@ WSL filesystem accesses the Windows repo checkout via `/mnt/c/...`.
 on a Windows dev machine, it must either shell out to WSL explicitly or the
 project must standardize development on Linux/macOS/WSL for anything that
 touches semgrep. Not an architecture decision — a tooling/environment note.
+
+---
+
+## OI-010 — §5.10 does not rank UNBOUNDED (2026-09-19)
+
+**Status:** decided provisionally, needs a spec answer.
+
+Pramana_Ledger_Spec.md §5.10 states the band order as "BLEEDING >
+UNSAVABLE-stopped > SAVABLE > SAFE". UNBOUNDED is a band (§5.5) and is not in
+that list, nor are the three authentication bands (§5.6).
+
+**Provisional decision** (`src/ecdat/risk/record.py::_BAND_RANK`): UNBOUNDED
+ranks below UNSAVABLE and above SAVABLE. An unbounded row might turn out to be
+either, so it must not outrank a row we have proved is bleeding, and must not
+be buried under rows we have proved are fine. Authentication bands rank by the
+same principle: RESIGN_BEFORE_Z with UNSAVABLE, ROTATE_BEFORE_Z with
+UNBOUNDED, SAFE_UNTIL_Z with SAFE.
+
+**Why it matters:** the closure queue (§5.8) ranks tasks by worst reachable
+band, so this ordering decides what an operator is told to do first. It is a
+presentation decision, not a formula one -- no band changes -- but it should
+be confirmed rather than inherited from this file.
+
+---
+
+## OI-011 — §6's `M=2030` row needs an `as_of` after M (2026-09-19)
+
+**Status:** resolved in the test, recorded so it is not rediscovered.
+
+§6 fixes `as_of = 2026-09-18` for the whole test set, and the row
+"M=2030 vs M=2038, Z=2036, X=10y, since 2020" expects
+"M=2030 -> UNSAVABLE [2026, 2030] STOPPED".
+
+Those cannot both hold. `M` is defined (§5.5) as the earliest MigrationEvidence
+with `status=Observed`, and a migration observed on 2030-01-01 is not evidence
+available on 2026-09-18. Applying §5.5 literally at that `as_of` gives
+`min(as_of, M) = 2026-09-18`, so the window would be [2026-01-01, 2026-09-18]
+and `bleeding` would be true (`M > as_of`), i.e. BLEEDING, not UNSAVABLE.
+
+**Resolution taken:** §5.5's formula is normative and is implemented
+unchanged. The row is evaluated at `as_of = 2030-06-01`, which is the earliest
+`as_of` at which its own M is observable; the expected window [2026-01-01,
+2030-01-01] and band UNSAVABLE then both fall out of the unmodified formula.
+See `tests/unit/risk/test_exposure_ledger.py::_m_case`.
+
+**What a spec answer would look like:** either restate the row with its own
+`as_of`, or state that `M` may be a *scheduled* migration date distinct from
+observed MigrationEvidence -- which would be a real design change, because a
+scheduled date is a declaration and §5.7 is explicit that declarations never
+stop the clock.
