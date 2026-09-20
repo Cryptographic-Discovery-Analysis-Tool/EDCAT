@@ -211,7 +211,7 @@ pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-That runs 351 tests, including all 18 worked examples from the frozen
+That runs 395 tests, including all 18 worked examples from the frozen
 specification. The calculation engine is real and fully tested. **The part that
 goes and looks at your actual systems is not finished yet** — see the checklist.
 
@@ -248,28 +248,30 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [x] **Package/dependency scanner** — runs Trivy against a container filesystem and lists what's bundled inside. Deliberately says nothing about whether any of it is actually *used* — a library sitting unused in a jar is a very different fact from one the code calls into, and this tool refuses to blur that line
 - [x] **Within-surface asset merging** — the same key found twice in one place (say, two certificate files naming the same key) becomes one entry, not two; a genuine disagreement between them becomes a flagged conflict, never a silent guess
 - [x] **Forbidden-correlation gate** — a check that blocks the tool from ever claiming two different keys are "the same object" without the one specific kind of proof that actually supports that claim
+- [x] **Container image scanner** — runs IBM's `cbomkit-theia` against a container image and reads its report in as evidence *someone else told us*, never as something we watched happen. Tested against a real container from the test enterprise; also proves the difference between "this image has no crypto" and "the scan itself broke halfway through" — those are different facts and the tool never confuses them
+- [x] **Hardware security module reader** — reads a PKCS#11 token's own inventory (key labels, sizes, algorithms, and the token's own confirmation that a private key can never be exported) without ever touching key material. Tested against a real SoftHSM2 token. Cloud key-management-service reading (AWS KMS etc.) is not built — see below
+- [x] **Compiled binary scanning** — matches published, public AES/SHA-256 constants inside a binary, and separately checks what crypto libraries it dynamically links against, and is careful never to blend those two into one claim (a program that merely *links against* OpenSSL is not the same fact as one with AES's math baked directly into it). Tested against a real binary from the test enterprise. RSA and elliptic-curve keys have no fixed pattern like this to search for, and the tool says so plainly every time rather than staying quiet about it
 - [x] **Apache-2.0 licence file**
 
 ### Not done yet
 
 - [ ] **Java keystore formats** — JKS and BCFKS are not read yet; they are reported as skipped, never as absent
-- [ ] **Container image scanner** — a certificate/secret-in-image reader (`cbomkit-theia`) has been test-driven against a real container and works; it is not wired into the tool as an adapter yet
-- [ ] **Hardware security module and cloud key reader** — real PKCS#11 metadata has been captured from a SoftHSM2 token (key labels, sizes, mechanisms — never key bytes); the reader itself is not built yet
-- [ ] **Compiled binary scanning** — YARA rules for AES/SHA-256 and a `readelf` dependency check have been proven against a real binary from the test enterprise; the adapter that runs them is not built yet
+- [ ] **Cloud key-management-service reader** — AWS KMS and similar; needs a real account to test against honestly, which this environment does not have
 - [ ] **Cross-surface relationships** — connecting "this key in the source code" to "this key on the wire" as a labelled, human-asserted link rather than an assumed identity
+- [ ] **Wiring every reader into one command** — each reader above works and is tested on its own; running all of them over one target from a single command line is not built yet
 - [ ] **Signed export** — the report is not signed yet, so it proves nothing about who wrote it
 - [ ] **Accuracy scoring** — measure and publish our own error rates on a test environment
 - [ ] **Packaging** — one-command install, offline, no internet access required
 - [ ] **Rename repository** `ecdat` → `pramana`
 
 **Honest summary:** the thinking is built and tested, and as of 20 Sep 2026
-four of the seven sensors are real and wired in: certificates, a live TLS
-probe, the config-file resolver, and the package/dependency scanner. Three
-more — container images, hardware/cloud keys, and compiled binaries — have
-been proven against real material from the test enterprise (a real scan, a
-real token, a real binary) but the adapter code that would make them run as
-part of a normal scan is not written yet. Nothing here has been run against a
-production network.
+all seven planned readers exist and are individually tested against real
+material — certificates, a live TLS probe, the config-file resolver, the
+package/dependency scanner, the container-image scanner, the hardware-module
+reader, and the compiled-binary scanner. What is not yet built is the single
+command that runs all seven over one target and correlates the results —
+today each one is proven on its own, not yet as one working pipeline. Nothing
+here has been run against a production network.
 
 ---
 
