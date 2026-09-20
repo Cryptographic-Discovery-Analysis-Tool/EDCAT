@@ -49,7 +49,7 @@ from ecdat.adapters.config.adapter import ConfigChainAdapter
 from ecdat.adapters.hsm.adapter import HsmPkcs11Adapter, Pkcs11ProbeBundle
 from ecdat.adapters.hsm.adapter import live_probe_runner as live_hsm_runner
 from ecdat.adapters.images.adapter import ImagesAdapter
-from ecdat.adapters.images.adapter import live_theia_runner
+from ecdat.adapters.images.adapter import live_file_reader, live_theia_runner
 from ecdat.adapters.packages.adapter import PackagesAdapter, TrivyScanBundle
 from ecdat.adapters.packages.adapter import live_scan_runner as live_packages_runner
 from ecdat.adapters.source.semgrep import SemgrepSourceAdapter
@@ -171,6 +171,12 @@ def _build_images(args: argparse.Namespace, basis: ConfidenceBasis) -> tuple[Ada
         if not args.input:
             raise CliUsageError("images-cbomkit-theia --live requires --input <image ref>")
         runner = live_theia_runner()
+        # --live also enables certificate-hash enrichment (see
+        # adapters/images/adapter.py's "Certificate hash enrichment"):
+        # cbomkit-theia's own CBOM never carries one, so the adapter
+        # independently re-reads and hashes each certificate it reported,
+        # the same real capability replay mode has no bytes to offer.
+        file_reader = live_file_reader()
     else:
         if not args.input:
             raise CliUsageError(
@@ -182,7 +188,11 @@ def _build_images(args: argparse.Namespace, basis: ConfidenceBasis) -> tuple[Ada
         def runner(target: ScanTarget, _document: dict[str, Any] = document) -> dict[str, Any]:
             return _document
 
-    adapter = ImagesAdapter(base_confidence=args.confidence, confidence_basis=basis, runner=runner)
+        file_reader = None
+
+    adapter = ImagesAdapter(
+        base_confidence=args.confidence, confidence_basis=basis, runner=runner, file_reader=file_reader
+    )
     return adapter, ScanTarget(target_id=args.target_id, locator=args.input)
 
 

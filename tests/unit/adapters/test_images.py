@@ -18,7 +18,12 @@ import json
 from pathlib import Path
 
 from ecdat.adapters.base import AdapterOutcome, ScanTarget
-from ecdat.adapters.images.adapter import ImagesAdapter, build_theia_argv
+from ecdat.adapters.images.adapter import (
+    FileReadError,
+    ImagesAdapter,
+    build_cat_argv,
+    build_theia_argv,
+)
 from ecdat.model.epistemic import EpistemicState
 from ecdat.model.evidence import ConfidenceBasis
 from ecdat.model.visibility import SupportLevel, VisibilityDimension
@@ -28,6 +33,10 @@ FIXTURES = (
     Path(__file__).resolve().parents[2] / "fixtures" / "recorded" / "theia" / "edge-2026-09-19"
 )
 SUCCESS_FIXTURE = FIXTURES / "edge-lb.sample.json"
+ISRG_ROOT_X2_PEM = FIXTURES / "certs" / "isrg-root-x2.pem"
+
+REAL_DER_SHA256 = "69729b8e15a86efc177a57afb7171dfc64add28c2fca8cf1507e34453ccb1470"
+REAL_SPKI_SHA256 = "762195c225586ee6c0237456e2107dc54f1efc21f61a792ebd515913cce68332"
 
 BASIS = ConfidenceBasis(
     source="ADAPTER_DECLARED",
@@ -42,8 +51,10 @@ BASIS = ConfidenceBasis(
 TARGET = ScanTarget(target_id="sample-image", locator="sample-image:latest")
 
 
-def adapter(runner):
-    return ImagesAdapter(base_confidence=0.5, confidence_basis=BASIS, runner=runner)
+def adapter(runner, file_reader=None):
+    return ImagesAdapter(
+        base_confidence=0.5, confidence_basis=BASIS, runner=runner, file_reader=file_reader
+    )
 
 
 def _load_success_document() -> dict:
@@ -125,6 +136,83 @@ def test_live_argv_mounts_the_docker_socket_and_names_the_image_subcommand():
     assert argv[argv.index("-v") + 1] == "/var/run/docker.sock:/var/run/docker.sock"
     assert argv[-2] == "image"
     assert argv[-1] == "sample-image:latest"
+
+
+def test_without_a_file_reader_certificate_findings_carry_no_hash():
+    """The default, unchanged behaviour -- every existing test above already
+    proves this implicitly (no file_reader is passed), stated explicitly
+    here as the baseline the enrichment tests below are contrasted against."""
+    result = adapter(lambda target: _load_success_document()).run(TARGET)
+    isrg = next(f for f in result.findings if f.fields["name"].value == "ISRG Root X2")
+    assert "der_sha256" not in isrg.fields
+    assert "spki_sha256" not in isrg.fields
+
+
+def test_with_a_file_reader_the_matched_certificate_gets_a_known_hash():
+    """The real cross-surface case: the sample fixture's one certificate
+    component ("ISRG Root X2") is matched against the real, independently
+    extracted certificate of the same name (see fixtures/.../certs/
+    README.md for provenance) and comes back with the actual measured hash
+    -- the same one certs-x509 and tls-endpoint would compute for the exact
+    same bytes."""
+
+    def file_reader(target, path):
+        assert path == "/etc/ssl/cert.pem"
+        return ISRG_ROOT_X2_PEM.read_bytes()
+
+    result = adapter(lambda target: _load_success_document(), file_reader=file_reader).run(TARGET)
+
+    isrg = next(f for f in result.findings if f.fields["name"].value == "ISRG Root X2")
+    assert isrg.fields["der_sha256"].value == REAL_DER_SHA256
+    assert isrg.fields["der_sha256"].state == EpistemicState.KNOWN
+    assert isrg.fields["spki_sha256"].value == REAL_SPKI_SHA256
+    assert isrg.fields["spki_sha256"].state == EpistemicState.KNOWN
+    # The other, non-certificate findings are unaffected.
+    others = [f for f in result.findings if f.fields["name"].value != "ISRG Root X2"]
+    assert all("der_sha256" not in f.fields for f in others)
+    assert find_secrets(result.model_dump_json()) == ()
+
+
+def test_a_failed_extraction_does_not_fail_the_whole_scan():
+    """cbomkit-theia already succeeded; an independent re-read failing (the
+    file moved, docker hiccuped) must not turn a completed scan into a
+    failed one -- only that one certificate's hash stays absent."""
+
+    def failing_reader(target, path):
+        raise FileReadError("simulated extraction failure")
+
+    result = adapter(lambda target: _load_success_document(), file_reader=failing_reader).run(TARGET)
+
+    assert result.outcome == AdapterOutcome.COMPLETED
+    isrg = next(f for f in result.findings if f.fields["name"].value == "ISRG Root X2")
+    assert "der_sha256" not in isrg.fields
+
+
+def test_a_non_matching_certificate_gets_no_fabricated_hash():
+    """certmatch.py's own matching rule applied end to end: theia's reported
+    properties for a certificate that does not match anything in the
+    extracted bundle must not produce a guessed hash."""
+    document = _load_success_document()
+    for component in document["components"]:
+        props = (component.get("cryptoProperties") or {}).get("certificateProperties")
+        if props:
+            props["subjectName"] = "Some Certificate That Was Never Extracted"
+
+    result = adapter(
+        lambda target: document, file_reader=lambda target, path: ISRG_ROOT_X2_PEM.read_bytes()
+    ).run(TARGET)
+
+    isrg = next(f for f in result.findings if f.fields["name"].value == "ISRG Root X2")
+    assert "der_sha256" not in isrg.fields
+
+
+def test_live_cat_argv_replaces_the_entrypoint_and_names_the_path():
+    argv = build_cat_argv("sample-image:latest", "/etc/ssl/cert.pem")
+    assert argv[0] == "docker"
+    assert "--entrypoint" in argv
+    assert argv[argv.index("--entrypoint") + 1] == "cat"
+    assert argv[-2] == "sample-image:latest"
+    assert argv[-1] == "/etc/ssl/cert.pem"
 
 
 def test_coverage_is_never_empty_even_when_nothing_is_found():

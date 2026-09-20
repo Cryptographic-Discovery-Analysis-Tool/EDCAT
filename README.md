@@ -211,7 +211,7 @@ pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-That runs 435 tests, including all 18 worked examples from the frozen
+That runs 447 tests, including all 18 worked examples from the frozen
 specification. The calculation engine is real and fully tested. **The part that
 goes and looks at your actual systems is not finished yet** — see the checklist.
 
@@ -253,17 +253,20 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [x] **Compiled binary scanning** — matches published, public AES/SHA-256 constants inside a binary, and separately checks what crypto libraries it dynamically links against, and is careful never to blend those two into one claim (a program that merely *links against* OpenSSL is not the same fact as one with AES's math baked directly into it). Tested against a real binary from the test enterprise. RSA and elliptic-curve keys have no fixed pattern like this to search for, and the tool says so plainly every time rather than staying quiet about it
 - [x] **Apache-2.0 licence file**
 - [x] **One command line for every reader** — `ecdat scan --adapter <name> ...` now reaches all eight readers, each either given a recorded file to replay (for tests and reruns) or `--live` to actually run the real tool. Four of the live paths — the package scanner, the image scanner, the hardware-module reader and the binary scanner — have each been run for real against the test enterprise from this command line, not just against a recorded file: the image scanner found the same 5082 real components a direct run finds, the hardware-module reader read a real token, and the binary and package scanners each found real matches. Running it live caught and fixed a real bug (the package scanner's live invocation was quietly asking for output in the wrong format)
-- [x] **Correlation across readers — one asset view** — `ecdat correlate` runs several readers over one JSON plan and joins their output into a single picture: every asset found, and which ones are genuinely *the same object*, never a guess. That proof is a byte-for-byte hash match — the only cryptographic proof strong enough for this tool to make that claim — and it now reaches across readers: a certificate found sitting on disk and the certificate actually seen live on the wire are recognised as the same object when they are. Proven with real project material, not test data invented for the occasion: the certificate our own test load-balancer actually presented during a real, previously-recorded handshake hashes identically to the certificate file sitting in this project's own test PKI, and the tool says so
+- [x] **Correlation across readers — one asset view** — `ecdat correlate` runs several readers over one JSON plan and joins their output into a single picture: every asset found, and which ones are genuinely *the same object*, never a guess. That proof is a byte-for-byte hash match — the only cryptographic proof strong enough for this tool to make that claim — and it now reaches across all three readers that can see a certificate at all: one found sitting on disk, one seen live on the wire, and one found inside a container image are all recognised as the same object when they are. Proven with real project material at real scale: run live against this project's own test container, **818 of the certificates it found came back with a real, independently-verified fingerprint** — not because the container scanner reports one itself (it doesn't — see below), but because `ecdat` went and read the actual certificate bytes a second time, itself, and checked
 
-### How the correlator gets that certificate hash from a live connection
+### How the correlator gets a certificate hash when the reader itself doesn't give one
 
-`ecdat`'s TLS reader talks to `sslyze`, a tool that already receives the full certificate during the handshake and hands it back as plain PEM text. The reader takes that same certificate text and runs it through the *exact* same fingerprinting code the on-disk certificate reader uses, so the two answers are directly comparable — the same object hashes the same way no matter which reader saw it. (`sslyze` also reports its own fingerprint, but in a different text encoding that would never have matched — using it as-is would have looked like it worked while silently never finding a single real match.)
+Two different tricks, because the two readers that don't compute a fingerprint themselves are missing it for two different reasons.
+
+`ecdat`'s TLS reader talks to `sslyze`, which already receives the full certificate during the handshake and hands it back as plain PEM text. The reader takes that same certificate text and runs it through the *exact* same fingerprinting code the on-disk certificate reader uses, so the two answers are directly comparable. (`sslyze` also reports its own fingerprint, but in a different text encoding that would never have matched — using it as-is would have looked like it worked while silently never finding a single real match.)
+
+The container-image reader's tool doesn't hand back the certificate bytes at all — only which file it found it in, and a description (whose name, who issued it, how long it's valid). So `ecdat` goes back and reads that exact file out of the image itself, a second time, and fingerprints what's actually there. The one wrinkle: a single file usually holds *many* certificates bundled together (Alpine's own trusted-root file holds 121), so `ecdat` has to work out which specific certificate in that pile the container scanner was even talking about, by matching the name/issuer/validity-dates description back to the one certificate that has them — and it only claims a match when exactly one candidate fits; anything ambiguous is left unlabelled rather than guessed.
 
 ### Not done yet
 
 - [ ] **Java keystore formats** — JKS and BCFKS are not read yet; they are reported as skipped, never as absent
 - [ ] **Cloud key-management-service reader** — AWS KMS and similar; needs a real account to test against honestly, which this environment does not have
-- [ ] **Linking a certificate found in a container image to one found elsewhere** — the certificate and TLS readers now share a comparable fingerprint (see above); the container-image reader's imported certificates don't carry one yet, so that one surface still can't be joined to the others this way
 - [ ] **Declared / human-asserted links** — "this endpoint is served by this container image" and similar: these need to be told to the tool (nothing about them is discoverable by scanning), and there is nowhere to tell it yet
 - [ ] **A live connection probe from the command line** — the live TLS/connection prober exists and has been proven (see above), but reaching it from `ecdat scan --live` needs two coordinated tools from a declared vantage point, which is intentionally kept as its own separate path (`tools/prober/`) rather than folded into this one
 - [ ] **Signed export** — the report is not signed yet, so it proves nothing about who wrote it
@@ -280,13 +283,14 @@ resolver read real files directly and always have been "live" in that
 sense; packages, images, the hardware module and the binary scanner were
 each just run for real and produced real results). The live TLS probe
 exists and has its own proven path, just not yet through this same command.
-What's still missing from correlation is breadth, not soundness: today it
-can prove a certificate found on disk and one seen live on the wire are the
-same object — two readers now share a real, comparable fingerprint — but a
-third reader (container images) doesn't carry that fingerprint yet, and the
-declared, human-told kind of link Part 5 of the architecture spec calls for
-still has nowhere to be entered. Nothing here has
-been run against a production network.
+Every reader that can see a certificate at all — on disk, live on the wire,
+or inside a container image — now shares a real, comparable fingerprint and
+correlates against the other two; run for real, 818 certificates inside one
+scanned container came back independently verified against the actual
+image, not asserted from the container scanner's own say-so. What's left is
+the declared, human-told kind of link Part 5 of the architecture spec calls
+for, which still has nowhere to be entered. Nothing here has been run
+against a production network.
 
 ---
 

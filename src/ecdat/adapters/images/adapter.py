@@ -49,6 +49,25 @@ paths from inside someone else's image), and `_scan()` does not catch it --
 `Adapter.run()`'s own exception handling converts it into
 `AdapterOutcome.FAILED` with a real `failure_reason`, the same mechanism
 `certs.adapter.CertificateAdapter` relies on for a missing path.
+
+**Certificate hash enrichment (optional, `file_reader`).** cbomkit-theia's
+own CBOM never carries a certificate hash or raw bytes (confirmed against a
+real, full 5082-component capture -- see the fixture README cited above) --
+so on its own this surface could never join `correlation/engine.py`'s
+cross-surface identity match the way `tls-endpoint` now does. When a
+`file_reader` is supplied, this adapter independently re-reads the exact
+file cbomkit-theia's own `evidence.occurrences[].location` names, parses
+every certificate in it, and matches each back to the component that
+describes it (`ecdat.adapters.images.certmatch` -- read its module
+docstring for the matching key and its honest limit). A matched
+certificate's `der_sha256`/`spki_sha256` fields are `KNOWN`, not `DECLARED`:
+unlike the rest of this surface's fields, this one is something the adapter
+observed directly by reading and canonicalising the bytes itself, not a
+third-party claim laundered into certainty -- R-DERIVE applies per field,
+and this field's evidentiary strength genuinely differs from its siblings
+on the same Finding. `file_reader` is optional and defaults to `None`:
+without it (e.g. every existing replay-mode test), certificate Findings
+simply carry no hash field, exactly as before this capability was added.
 """
 from __future__ import annotations
 
@@ -67,6 +86,7 @@ from ecdat.adapters.base import (
     RawCapture,
     ScanTarget,
 )
+from ecdat.adapters.images.certmatch import CertBundleParseError, match_one, parse_bundle
 from ecdat.export.cyclonedx import ImportedCryptoAsset, import_cbom
 from ecdat.model.epistemic import EpistemicState
 from ecdat.model.evidence import ConfidenceBasis, Evidence
@@ -123,6 +143,75 @@ class TheiaInvocationError(RuntimeError):
 #: tests replay a recorded document directly and the subprocess boundary
 #: stays a single, explicit seam rather than being buried inside `_scan`.
 TheiaRunner = Callable[[ScanTarget], dict[str, Any]]
+
+#: A callable that reads one file's raw bytes out of the scanned image, or
+#: raises to report it could not. Optional (see module docstring
+#: "Certificate hash enrichment") -- tests inject a fixture's bytes directly;
+#: the live path shells out to docker.
+FileReader = Callable[[ScanTarget, str], bytes]
+
+
+class FileReadError(RuntimeError):
+    """A live file-extraction subprocess exited non-zero or produced no
+    output. Carries only a description, for the same reason
+    TheiaInvocationError does -- never captured output, which can carry
+    filesystem paths from inside someone else's image."""
+
+
+def build_cat_argv(image_ref: str, path: str) -> list[str]:
+    """The pinned argv for one live file extraction: run the image with its
+    normal entrypoint replaced by `cat`, so the only output on stdout is the
+    file's own bytes. A pure function so the live-invocation shape can be
+    asserted without ever shelling out (mirrors build_theia_argv)."""
+    return ["docker", "run", "--rm", "--entrypoint", "cat", image_ref, path]
+
+
+def live_file_reader(*, timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS) -> FileReader:
+    """Build a `FileReader` that actually shells out to docker.
+
+    Kept as a factory returning a plain callable, never the adapter's
+    default, exactly as `live_theia_runner` keeps a live subprocess path out
+    of the constructor's default.
+    """
+
+    def _read(target: ScanTarget, path: str) -> bytes:
+        argv = build_cat_argv(target.locator, path)
+        try:
+            completed = subprocess.run(
+                argv, capture_output=True, timeout=timeout_seconds, check=False
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise AdapterTimeout(f"file extraction timed out after {timeout_seconds}s") from exc
+        except OSError as exc:
+            raise FileReadError(f"could not start docker: {type(exc).__name__}") from None
+
+        if len(completed.stdout) > MAX_OUTPUT_BYTES:
+            raise FileReadError("extracted file exceeded the output-size cap")
+        if completed.returncode != 0:
+            raise FileReadError(f"file extraction exited {completed.returncode}")
+        if not completed.stdout:
+            raise FileReadError("file extraction produced no output")
+        return completed.stdout
+
+    return _read
+
+
+def _certificate_locations(document: dict[str, Any]) -> dict[str, tuple[str | None, dict[str, Any]]]:
+    """bom_ref -> (location, certificateProperties) for every
+    certificate-type component in the raw CBOM document. Read directly from
+    the document rather than from `import_cbom`'s output, which does not
+    preserve either field -- it was built for a different purpose (turning
+    a component into evidence) and was not, and is not, modified here."""
+    result: dict[str, tuple[str | None, dict[str, Any]]] = {}
+    for component in document.get("components") or ():
+        crypto = component.get("cryptoProperties") or {}
+        if crypto.get("assetType") != "certificate":
+            continue
+        bom_ref = str(component.get("bom-ref") or "")
+        occurrences = (component.get("evidence") or {}).get("occurrences") or ()
+        location = occurrences[0].get("location") if occurrences else None
+        result[bom_ref] = (location, crypto.get("certificateProperties") or {})
+    return result
 
 
 def build_theia_argv(image_ref: str) -> list[str]:
@@ -202,26 +291,43 @@ class ImagesAdapter(Adapter):
         base_confidence: float,
         confidence_basis: ConfidenceBasis,
         runner: TheiaRunner,
+        file_reader: FileReader | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         """`base_confidence` is injected, never defaulted: no cited row
         exists for this surface in data/base_confidence.yaml
         (usable_row_count is 0), so the caller supplies a value together
         with its own justification, exactly as certs/adapter.py and
-        tls/adapter.py require."""
+        tls/adapter.py require.
+
+        `file_reader` is optional -- see module docstring "Certificate hash
+        enrichment". Its absence changes nothing about this adapter's
+        existing behaviour."""
         super().__init__(**({"clock": clock} if clock else {}))
         self._base_confidence = base_confidence
         self._confidence_basis = confidence_basis
         self._runner = runner
+        self._file_reader = file_reader
 
     # --- emission --------------------------------------------------------
 
-    def _fields(self, asset: ImportedCryptoAsset, evidence_id: str) -> dict[str, FieldValue]:
+    def _fields(
+        self,
+        asset: ImportedCryptoAsset,
+        evidence_id: str,
+        hash_match: tuple[str, str, str] | None,
+    ) -> dict[str, FieldValue]:
         """Every field is DECLARED or UNKNOWN, never KNOWN:
         `ImportedCryptoAsset.state` already establishes that a third-party
         CBOM component is a statement, not an observation this process made
         (see its docstring in ecdat/export/cyclonedx.py); nothing here may
         launder that back into stronger certainty.
+
+        `hash_match`, when not None, is (der_sha256, spki_sha256,
+        hash_evidence_id) from independently re-reading and hashing this
+        certificate (module docstring "Certificate hash enrichment"). Those
+        two fields alone are KNOWN: unlike the rest of this Finding, this is
+        something the adapter observed directly, not cbomkit-theia's claim.
         """
         refs = (evidence_id,)
 
@@ -237,12 +343,98 @@ class ImagesAdapter(Adapter):
                 return FieldValue(value=None, state=EpistemicState.UNKNOWN)
             return declared(value)
 
-        return {
+        fields = {
             "name": declared(asset.name),
             "asset_type": declared(asset.asset_type),
             "primitive": declared_or_unknown(asset.primitive),
             "oid": declared_or_unknown(asset.oid),
         }
+        if hash_match is not None:
+            der_sha256, spki_sha256, hash_evidence_id = hash_match
+            hash_refs = (hash_evidence_id,)
+            # Named identically to certs-x509's and tls-endpoint's own
+            # der_sha256/spki_sha256 fields, for the same reason tls/
+            # adapter.py gives: correlation/engine.py's cross-surface
+            # identity match looks for exactly this field name.
+            fields["der_sha256"] = FieldValue(
+                value=der_sha256, state=EpistemicState.KNOWN, evidence_refs=hash_refs
+            )
+            fields["spki_sha256"] = FieldValue(
+                value=spki_sha256, state=EpistemicState.KNOWN, evidence_refs=hash_refs
+            )
+        return fields
+
+    def _hash_enrichment(
+        self, document: dict[str, Any], target: ScanTarget
+    ) -> tuple[dict[str, tuple[str, str, str]], list[Evidence], list[RawCapture]]:
+        """Independently re-read and hash the certificates cbomkit-theia
+        found, when a `file_reader` was supplied. Returns bom_ref ->
+        (der_sha256, spki_sha256, evidence_id), plus the Evidence/RawCapture
+        entries backing those hashes. Empty when no file_reader is set, or
+        when nothing on this surface is a certificate -- the common,
+        inexpensive case is checked first so no extraction is attempted for
+        nothing.
+        """
+        if self._file_reader is None:
+            return {}, [], []
+        cert_info = _certificate_locations(document)
+        if not cert_info:
+            return {}, [], []
+
+        locations = sorted({location for location, _ in cert_info.values() if location})
+        bundles: dict[str, tuple[tuple, str]] = {}
+        extra_evidence: list[Evidence] = []
+        extra_raw_captures: list[RawCapture] = []
+        for index, location in enumerate(locations):
+            try:
+                raw_bytes = self._file_reader(target, location)
+                bundle = parse_bundle(raw_bytes)
+            except (FileReadError, CertBundleParseError, AdapterTimeout):
+                # That location's certificates simply get no hash -- a
+                # failed independent read is not this adapter's own
+                # failure (cbomkit-theia already succeeded), so it must not
+                # fail the whole scan.
+                continue
+            raw_ref = f"file-extraction://{target.locator}{location}"
+            extra_raw_captures.append(
+                RawCapture(
+                    raw_ref=raw_ref,
+                    source_tool="docker run --entrypoint cat",
+                    tool_version="n/a",
+                    sha256=hashlib.sha256(raw_bytes).hexdigest(),
+                    captured_at=self._clock(),
+                )
+            )
+            evidence_id = f"{self.adapter_id}:cert-hash:{index}"
+            extra_evidence.append(
+                Evidence(
+                    evidence_id=evidence_id,
+                    source_tool="ecdat-cert-extraction",
+                    tool_version="1",
+                    location=f"{target.locator}{location}",
+                    base_confidence=self._base_confidence,
+                    confidence_basis=self._confidence_basis,
+                    raw_ref=raw_ref,
+                )
+            )
+            bundles[location] = (bundle, evidence_id)
+
+        hash_by_bom_ref: dict[str, tuple[str, str, str]] = {}
+        for bom_ref, (location, properties) in cert_info.items():
+            if location not in bundles:
+                continue
+            bundle, evidence_id = bundles[location]
+            match = match_one(
+                bundle,
+                subject_cn=properties.get("subjectName"),
+                issuer_cn=properties.get("issuerName"),
+                not_before=properties.get("notValidBefore"),
+                not_after=properties.get("notValidAfter"),
+            )
+            if match is not None:
+                hash_by_bom_ref[bom_ref] = (match.der_sha256, match.spki_sha256, evidence_id)
+
+        return hash_by_bom_ref, extra_evidence, extra_raw_captures
 
     def _scan(self, target: ScanTarget) -> AdapterRunResult:
         observed_at = self._clock()
@@ -254,6 +446,7 @@ class ImagesAdapter(Adapter):
         document = self._runner(target)
 
         imported = import_cbom(document)
+        hash_by_bom_ref, extra_evidence, extra_raw_captures = self._hash_enrichment(document, target)
 
         surface = f"image:{target.locator}"
         raw_ref = f"cbomkit-theia://{target.locator}"
@@ -278,9 +471,10 @@ class ImagesAdapter(Adapter):
                     finding_id=f"{self.adapter_id}:{asset.bom_ref}",
                     surface=surface,
                     evidence_refs=(evidence_id,),
-                    fields=self._fields(asset, evidence_id),
+                    fields=self._fields(asset, evidence_id, hash_by_bom_ref.get(asset.bom_ref)),
                 )
             )
+        evidence.extend(extra_evidence)
 
         raw_captures = (
             RawCapture(
@@ -292,6 +486,7 @@ class ImagesAdapter(Adapter):
                 ).hexdigest(),
                 captured_at=observed_at,
             ),
+            *extra_raw_captures,
         )
 
         detail = (
