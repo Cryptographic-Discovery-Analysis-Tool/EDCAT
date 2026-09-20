@@ -145,3 +145,51 @@ on every run, so a reader is never left thinking the curve list was exhaustive.
 `tools/prober/Dockerfile` pins the prober's own TLS stack for the same reason
 OI-014 gives: a scanner whose results depend on the host distribution's
 OpenSSL is not reproducible.
+
+## DEV-007 — within-surface merge key drops `algorithm_family` from strict equality (2026-09-20)
+
+**Issue.** `docs/architecture/ECDAT_Final_Architecture.md` Part 5 states the canonical asset key
+as `(algorithm_family, parameters, purpose, scope_anchor)`, which reads as: two Findings must
+match on `algorithm_family` exactly before they are even candidates to merge. `src/ecdat/
+correlation/merge.py` (P6, within-surface merge) is separately required to handle two Findings
+that *disagree* on `public_key_algorithm` for the same `scope_anchor` by producing one merged
+`CryptoAsset` with a CONFLICTING field on that key — not two separate, individually-certain
+single-Finding assets that are never compared to each other.
+
+**Evidence.** These two requirements are in direct tension. If `algorithm_family` gates grouping
+by strict equality, two Findings that disagree on it can never land in the same group by
+construction — `_merge_field` never runs on `public_key_algorithm` for them, so the required
+CONFLICTING outcome is structurally unreachable. The disagreement would instead surface as "two
+unrelated assets", which is a *worse* epistemic claim than "one asset, disputed field": it hides
+that both observations were made at the same location, and CLAUDE.md's R-MONOTONE rule ("more
+evidence never creates unsupported certainty") cuts both ways — silently splitting one location's
+conflicting observations into two individually-confident assets manufactures unsupported
+*distinctness* exactly as much as picking a winner would manufacture unsupported *certainty*.
+
+**Options.** (a) Keep `algorithm_family` in the strict key and accept that a disagreement on it
+never produces a CONFLICTING field, only two separate assets — rejected: it is the less honest
+representation of what was actually observed, for the reason above, and it is incompatible with
+the explicit within-surface-merge behaviour this phase is required to implement. (b) Drop
+`scope_anchor` from the key too, and merge on `parameters` alone, even across surfaces — rejected
+outright: it directly violates the hard "never merge across surfaces" rule (Lock; CLAUDE.md;
+Part 5), which this module's own tests guard (`tests/unit/correlation/test_merge.py::
+test_different_surfaces_with_matching_algorithm_and_parameters_never_merge`). (c) Key on
+`(parameters, scope_anchor)` only, and let `algorithm_family` — like every other field
+(`subject`, `key_usage`, etc.) — flow through the ordinary per-field agree/CONFLICT merge path —
+chosen. `parameters` (key size and/or curve) remains a strong same-object signal on its own in
+every surface this task covers: an RSA key and an EC key do not coincidentally share a
+`(size, curve)` shape, so genuinely different key material at one location still lands in
+different assets in practice. `algorithm_family` becomes data the merge can be honestly wrong
+about, which is the more conservative claim.
+
+**Impact.** `src/ecdat/correlation/merge.py`'s grouping key (`MergeKey`) is `(parameters,
+scope_anchor)`, not the full Part 5 four-tuple — `purpose` was already excluded per this task's
+own scope (a raw adapter Finding does not populate it; see the module docstring). `CryptoAsset.
+algorithm_family` (the plain convenience field added alongside this module, `src/ecdat/model/
+asset.py`) is populated from the merged `public_key_algorithm` field only when that field is
+*not* itself CONFLICTING; under disagreement it is `None` and the authoritative record is
+`asset.fields["public_key_algorithm"].state == CONFLICTING`. `CryptoAsset.purpose` is populated
+the same convenience-readback way, from whatever `fields["purpose"]` ends up being after an
+ordinary (non-key) merge, if a Finding happens to populate it. Cross-surface merging remains
+structurally impossible regardless of any of this, because `scope_anchor` stays in the key
+unconditionally.

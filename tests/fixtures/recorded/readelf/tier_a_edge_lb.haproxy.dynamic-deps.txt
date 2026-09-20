@@ -1,0 +1,5 @@
+ 0x0000000000000001 (NEEDED)             Shared library: [libssl.so.3]
+ 0x0000000000000001 (NEEDED)             Shared library: [libcrypto.so.3]
+ 0x0000000000000001 (NEEDED)             Shared library: [liblua-5.4.so.0]
+ 0x0000000000000001 (NEEDED)             Shared library: [libpcre2-8.so.0]
+ 0x0000000000000001 (NEEDED)             Shared library: [libc.musl-x86_64.so.1]
