@@ -1,0 +1,9 @@
+{
+    "KeyId": "arn:aws:kms:us-east-1:000000000000:key/dd316ada-96cf-4078-93da-53ab2473536b",
+    "PublicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEjEZisIwKuKoerQ9ZV4P3AQMrX/DzdcBEVaBSkUerPf93+sl+Hz6S3O2Y+joyksnKzp5MB9yTs3iDe2M+544GuQ==",
+    "KeySpec": "ECC_NIST_P256",
+    "KeyUsage": "SIGN_VERIFY",
+    "SigningAlgorithms": [
+        "ECDSA_SHA_256"
+    ]
+}

@@ -1,0 +1,25 @@
+{
+    "KeyMetadata": {
+        "AWSAccountId": "000000000000",
+        "KeyId": "f0f219e9-1838-44fe-9f50-6b31105303a8",
+        "Arn": "arn:aws:kms:us-east-1:000000000000:key/f0f219e9-1838-44fe-9f50-6b31105303a8",
+        "CreationDate": 1789876547.987977,
+        "Enabled": true,
+        "Description": "pramana-fixture-rsa-signing-key",
+        "KeyUsage": "SIGN_VERIFY",
+        "KeyState": "Enabled",
+        "Origin": "AWS_KMS",
+        "KeyManager": "CUSTOMER",
+        "CustomerMasterKeySpec": "RSA_2048",
+        "KeySpec": "RSA_2048",
+        "SigningAlgorithms": [
+            "RSASSA_PKCS1_V1_5_SHA_256",
+            "RSASSA_PKCS1_V1_5_SHA_384",
+            "RSASSA_PKCS1_V1_5_SHA_512",
+            "RSASSA_PSS_SHA_256",
+            "RSASSA_PSS_SHA_384",
+            "RSASSA_PSS_SHA_512"
+        ],
+        "MultiRegion": false
+    }
+}

@@ -48,6 +48,8 @@ from ecdat.adapters.certs.adapter import CertificateAdapter
 from ecdat.adapters.config.adapter import ConfigChainAdapter
 from ecdat.adapters.hsm.adapter import HsmPkcs11Adapter, Pkcs11ProbeBundle
 from ecdat.adapters.hsm.adapter import live_probe_runner as live_hsm_runner
+from ecdat.adapters.kms.adapter import KmsAdapter, KmsProbeBundle
+from ecdat.adapters.kms.adapter import live_kms_runner
 from ecdat.adapters.images.adapter import ImagesAdapter
 from ecdat.adapters.images.adapter import live_file_reader, live_theia_runner
 from ecdat.adapters.packages.adapter import PackagesAdapter, TrivyScanBundle
@@ -69,6 +71,7 @@ ADAPTERS: dict[str, type[Adapter]] = {
     PackagesAdapter.adapter_id: PackagesAdapter,
     ImagesAdapter.adapter_id: ImagesAdapter,
     HsmPkcs11Adapter.adapter_id: HsmPkcs11Adapter,
+    KmsAdapter.adapter_id: KmsAdapter,
     BinaryAdapter.adapter_id: BinaryAdapter,
 }
 
@@ -226,6 +229,35 @@ def _build_hsm(args: argparse.Namespace, basis: ConfidenceBasis) -> tuple[Adapte
     return adapter, ScanTarget(target_id=args.target_id, locator=locator)
 
 
+def _build_kms(args: argparse.Namespace, basis: ConfidenceBasis) -> tuple[Adapter, ScanTarget]:
+    if args.live:
+        runner = live_kms_runner(endpoint_url=args.kms_endpoint_url, region=args.kms_region)
+        locator = args.kms_region or "aws-kms"
+    else:
+        if not args.kms_list_keys_input:
+            raise CliUsageError(
+                "kms-aws replay mode requires --kms-list-keys-input <recorded list-keys JSON "
+                "file> (or pass --live, optionally with --kms-endpoint-url for LocalStack, to "
+                "read a real account)"
+            )
+        bundle = KmsProbeBundle(
+            list_keys_text=_read_optional_path(args.kms_list_keys_input),
+            describe_key_texts=tuple(
+                text for p in args.kms_describe_key_input if (text := _read_optional_path(p))
+            ),
+            public_key_texts=tuple(
+                text for p in args.kms_public_key_input if (text := _read_optional_path(p))
+            ),
+        )
+
+        def runner(target: ScanTarget, _bundle: KmsProbeBundle = bundle) -> KmsProbeBundle:
+            return _bundle
+
+        locator = args.kms_region or args.target_id
+    adapter = KmsAdapter(base_confidence=args.confidence, confidence_basis=basis, runner=runner)
+    return adapter, ScanTarget(target_id=args.target_id, locator=locator)
+
+
 def _build_binary(args: argparse.Namespace, basis: ConfidenceBasis) -> tuple[Adapter, ScanTarget]:
     if args.live:
         if not args.input:
@@ -303,6 +335,7 @@ BUILDERS: dict[str, Callable[[argparse.Namespace, ConfidenceBasis], tuple[Adapte
     PackagesAdapter.adapter_id: _build_packages,
     ImagesAdapter.adapter_id: _build_images,
     HsmPkcs11Adapter.adapter_id: _build_hsm,
+    KmsAdapter.adapter_id: _build_kms,
     BinaryAdapter.adapter_id: _build_binary,
     TlsEndpointAdapter.adapter_id: _build_tls,
 }
@@ -460,6 +493,11 @@ _PLAN_ENTRY_DEFAULTS: dict[str, Any] = {
     "sslyze_input": None,
     "negotiated_input": None,
     "classical_only_input": None,
+    "kms_endpoint_url": None,
+    "kms_region": None,
+    "kms_list_keys_input": None,
+    "kms_describe_key_input": [],
+    "kms_public_key_input": [],
 }
 
 
@@ -647,6 +685,28 @@ def main(argv: list[str] | None = None) -> int:
     scan.add_argument("--pkcs11-objects-input", help="hsm-pkcs11 replay mode: recorded --list-objects output")
     scan.add_argument(
         "--pkcs11-mechanisms-input", help="hsm-pkcs11 replay mode: recorded --list-mechanisms output"
+    )
+
+    # kms-aws
+    scan.add_argument(
+        "--kms-endpoint-url",
+        help="kms-aws --live only: override the AWS endpoint (e.g. a LocalStack URL such as "
+        "http://localhost:4566). Omit entirely to read a real AWS account.",
+    )
+    scan.add_argument("--kms-region", help="kms-aws only: the AWS region to use")
+    scan.add_argument("--kms-list-keys-input", help="kms-aws replay mode: recorded `aws kms list-keys` output")
+    scan.add_argument(
+        "--kms-describe-key-input",
+        action="append",
+        default=[],
+        help="kms-aws replay mode: recorded `aws kms describe-key` output for one key; repeatable",
+    )
+    scan.add_argument(
+        "--kms-public-key-input",
+        action="append",
+        default=[],
+        help="kms-aws replay mode: recorded `aws kms get-public-key` output for one asymmetric "
+        "key; repeatable, optional",
     )
 
     # binary-yara-readelf

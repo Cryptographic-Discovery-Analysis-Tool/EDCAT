@@ -41,8 +41,10 @@ behaviour.
 | Maven | 3.8.7 | — | host builds only; the image uses its own |
 | Java (host) | OpenJDK 21.0.12 | — | the image uses Corretto 25 |
 | haproxy (host) | 2.8.16 | — | the Tier A LB runs in a container |
-| SoftHSM2 | 2.6.1 | — | P11 |
+| SoftHSM2 | 2.6.1 | — | P11 (HSM half) |
 | YARA | 4.5.0 | — | P12 |
+| AWS CLI | 1.46.1 | — | P11 (KMS half); `pip install awscli` into a dedicated venv |
+| LocalStack | 3.0.2 (image tag `:3.0`) | — | P11 (KMS half) fixture recording only — not a real AWS account; see DEV-011. `latest` tag refuses to start without a paid auth token, recorded as a fact, not assumed |
 | **semgrep** | **1.99.0** | 1.99.0 | **MATCH** |
 | **sslyze** | **6.2.0** | 6.2.0 | **MATCH** |
 | **trivy** | **0.74.0** | 0.74.0 | **MATCH** |

@@ -1,0 +1,12 @@
+{
+    "Keys": [
+        {
+            "KeyId": "c5e5d28f-fa8a-4b1a-859a-6e7c842352ac",
+            "KeyArn": "arn:aws:kms:us-east-1:000000000000:key/c5e5d28f-fa8a-4b1a-859a-6e7c842352ac"
+        },
+        {
+            "KeyId": "dd316ada-96cf-4078-93da-53ab2473536b",
+            "KeyArn": "arn:aws:kms:us-east-1:000000000000:key/dd316ada-96cf-4078-93da-53ab2473536b"
+        }
+    ]
+}
