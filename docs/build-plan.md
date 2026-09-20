@@ -339,28 +339,90 @@ nowhere to declare it (P6's open item). Rendering the clean chain would be preci
 the false-certainty failure this tool exists to prevent, on the one screen a judge
 is most likely to photograph.
 
-### P16 — Retire three platform claims the code does not support
+### P16–P19 — deck promises that are real requirements and are not built yet
 
-Not from the review. Found while checking it, and more urgent than anything above,
-because the deck asserts these today:
+Revised 2026-09-20 after a second pass. The first pass framed these as claims to
+delete from the deck. That was wrong, and the correction matters: **the deck is the
+specification.** It states what Pramana is meant to be, and the build follows it.
+Deleting an unbuilt promise from the slide does not make the deck honest — it
+silently drops a genuine requirement and makes the *product* smaller.
 
-| Claim (deck slide 3, "Platform") | Reality, verified 2026-09-20 | Action |
-|---|---|---|
-| "PostgreSQL (JSONB evidence + snapshots)" | `src/ecdat/store/__init__.py` is 0 bytes. No `postgres`, `psycopg` or `sqlalchemy` anywhere in `src/` or `pyproject.toml`. | P13 supersedes it — then say what P13 actually built. Until then the slide must not say PostgreSQL. |
-| "RBAC + audit log" | Zero hits for `rbac`, `audit_log` or `audit log` across `src/` and `tests/`. Not started. | Remove from the slide, or move it to a stated roadmap line. Do not build it for the deck. |
-| "no egress (test-enforced)" | `harness/compose/docker-compose.yml` sets `internal: true` (H6). No test asserts it. | Either add the test, or change the wording to "no egress (enforced by the network definition)". Configured is not tested, and this project knows the difference. |
+The honest move is the one this project already applies to its own findings: keep
+the claim, **say which state it is in**, and put the unbuilt half on the plan.
+Slide 5 already does exactly this with its "declared as targets — not yet measured"
+block. The platform row should work the same way.
 
-A tool whose entire pitch is "we never claim what we did not observe" cannot ship a
-slide with three unobserved claims on it. This phase is a deletion, and it outranks
-every feature above.
+One of the five below is genuinely a deletion. Four are phases.
+
+| Deck promise | Where | Verified state, 2026-09-20 | Verdict |
+|---|---|---|---|
+| "PostgreSQL (JSONB evidence + snapshots)" | S3 platform | `store/__init__.py` is 0 bytes; no `postgres`/`psycopg`/`sqlalchemy` in `src/` or `pyproject.toml` | **Keep — P13 builds it.** Slide 5's "snapshots show new exposure, closed windows and certificate change" is the same requirement stated twice. Mark *planned* until P13 lands, then say what P13 actually built rather than naming a database for its own sake. |
+| "RBAC + audit log" | S3 platform **and** S4's challenge row | zero hits for `rbac`, `audit_log`, `audit log` in `src/` or `tests/` | **Keep — P17.** This is not decoration: it is the stated answer to the challenge *"the inventory is itself a sensitive asset."* Deleting it would weaken an answer the deck needs to give. Mark *planned*. |
+| "no egress (test-enforced)" | S3 **and** S4 | `harness/compose/docker-compose.yml` sets `internal: true` (H6); **no test asserts it** | **Keep — P18.** The requirement is right and already configured. Only the word *test-enforced* is ahead of the code, and closing that gap is one test. |
+| "the dates at which the ranking flips are printed" | S4, answering *"the arrival date Z is genuinely contested"* | zero hits for `flip`; the UI switches Z one scenario at a time, and nothing computes or prints the date a row changes band | **Keep — P19.** A real innovation claim, and cheap: the three scenarios and the closure engine's counterfactual re-evaluation already exist. |
+| "Trivy / **Syft**" | S3 sensors | no reference to Syft anywhere in `src/`, `tests/` or `tools/` | **The one real deletion.** Trivy already provides the package inventory this needs, and `packages-trivy` is built and live-proven. Syft would add a second tool for the same fact. Cut the word. |
+
+Separately, a wording fix rather than a phase: slide 2 (iv) promises recommendations
+*"with size, latency and compatibility impact."* `recommend/engine.py` and
+`data/pqc_options.yaml` carry byte counts and a cited handshake-failure rate —
+**size and compatibility, but no latency figure at all**, and no cited source for one
+exists in `data/`. Either vendor a citable latency measurement or say what is
+actually shown: *"with size, handshake-failure precedent and compatibility impact."*
+Inventing a latency number to match the slide is the one thing that must not happen.
+
+### P17 — RBAC and audit log
+
+**Falls under:** ledger phase 7 (*dashboard*, built). The API exists and is
+unauthenticated.
+
+The deck answers "the inventory is itself a sensitive asset" with four controls.
+Three are real — on-prem, no key material stored (enforced by
+`security/secrets.py` and tested), and the network definition. The fourth is not
+started. Minimum honest scope: an authenticated API, roles that distinguish reading
+the ledger from changing a scenario or exporting, and an append-only log of who
+read or exported what. Export is the sensitive verb here, not scanning.
+
+### P18 — Make no-egress test-enforced
+
+**Falls under:** the harness, not `src/`. Smallest phase on this list.
+
+`internal: true` is already set. Add the test that asserts a container on
+`payments-internal` cannot reach the outside world, so the deck's word
+*test-enforced* becomes true. Until it passes, the deck says "enforced by the
+network definition."
+
+### P19 — Scenario sensitivity: print the date the ranking flips
+
+**Falls under:** ledger phase 3 (*scenario engine*, built) and phase 5 (*closure
+engine*, built). Both halves exist; nothing joins them.
+
+`data/scenarios.yaml` carries all three Z dates, `Scenario.load_all()` already
+reads them, and `closure/engine.py` already re-evaluates a record under alternative
+inputs (`_algorithm_candidates`, `_start_candidates`, `_migration_candidates`, …) to
+work out what a missing fact could turn out to be. Printing "this row is BLEEDING
+under Z=2031 and 2036, SAVABLE under Z=2041" is that same counterfactual machinery
+pointed at the scenario axis instead of the evidence axis.
+
+Why it is worth a phase of its own: it converts the deck's weakest-sounding
+admission — *we do not know when Z is* — into its strongest move. A tool that says
+"here is the date at which this ranking changes, and here is the row that changes
+first" has turned a contested assumption into an output. Nothing else on this list
+buys that much for as little code.
+
+**Done when:** every ledger row carries its band under all three scenarios, and the
+UI shows which rows are scenario-sensitive without the operator having to flip the
+control and remember what it said before.
 
 ### Ordering
 
-P16 first — it is a text change and it is a correctness bug in the pitch.
-Then P13, because it is the only one that unblocks the word VERIFY, and because it
-retires the PostgreSQL claim by making it true rather than by deleting it.
-Then P15, the cheapest visible result, since the data is already computed.
-Then P14.
+P16's wording decisions first — they are text, and two of them (Syft, latency) are
+corrections rather than promises.
+Then **P19**, because it is the cheapest genuinely new capability on this list and
+both halves already exist.
+Then **P13**, the only one that earns the word VERIFY, and which makes the snapshot
+and PostgreSQL promises true rather than deleted.
+Then **P15** (the data is already computed), **P14**, **P18** (one test), and
+**P17** last — it is real work and it changes nothing a judge can see.
 
 **Out of scope, restated:** nothing in this section introduces AI, scoring, or
 weighting into the analysis path. The review's own first recommendation was to keep
