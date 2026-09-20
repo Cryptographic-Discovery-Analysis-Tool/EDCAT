@@ -230,3 +230,201 @@ None of 1–5 is CLOSED: per CLAUDE.md a phase closes only when `ecdat scan`
 runs live on the Tier A target directory and `score_run.py` is re-run. They
 have no adapter feeding them yet. Ordering rationale and the environment
 constraint behind it: `docs/deviations.md` DEV-002.
+
+---
+
+## P13–P16 — closing the loop (added 2026-09-20)
+
+Source of the proposal: an outside review of the SIH deck against the repository,
+relayed 2026-09-20. Every item below was checked against the code before being
+written down; where the review was wrong about what exists, that is recorded here
+rather than quietly corrected.
+
+**What the review got right.** The repository is materially ahead of the deck. The
+deck's measured block still says "120 unit tests" and "6 of 11 tool experiments";
+the tree collects **467 tests** (verified by `pytest --collect-only`, 2026-09-20),
+carries **nine adapters**, five of them live-proven from `ecdat scan --live`, three
+CI guards, and cross-surface correlation proven at 818-certificate scale. The deck
+undersells the build by roughly a factor of four.
+
+**What the review got wrong, and it matters.** It proposed "implement verification
+after migration" as new work. Most of it is already built and tested:
+`model/temporal.py::MigrationEvidence`, `risk/confidentiality_ledger.py::_Timeline`
+(`first_stop`, `reopened`, `currently_stopped`, `exposure_intervals`), the UNSAVABLE
+band itself, and `adapters/tls/adapter.py`'s migration-evidence builder, which
+already turns a real probe into §5.7 migration evidence and already refuses to do so
+when the negotiation was not observed. The tool can already say "this window closed"
+and the harder "this window re-opened."
+
+What is actually missing is not the verification logic. It is that
+**`src/ecdat/store/` is a 0-byte package** — nothing remembers the previous run, so
+no two runs can be compared. That single gap is also the whole of the review's
+separate "drift" proposal. They are one phase, not two, and the expensive half of
+both is already done.
+
+### P13 — Run store and run-to-run diff
+
+**Falls under:** P2 (*store + score wiring*, recorded above as "done (in-memory)" —
+this is the persistent half it deferred), ledger phase 4 (*exposure ledger*, built),
+and §5.7's migration timeline (built).
+
+**Missing:** run identity, persistence, and a diff. Nothing else.
+
+Deliverables:
+
+- `store/` — a real repository behind the interface P2 left open. Lock §5 row 9
+  leaves the table layout open; a run is an append-only document either way.
+- `ecdat runs` (list) and `ecdat diff --from <run> --to <run>`.
+- Diff classes: `NEW` · `CHANGED` · `REMOVED` · `MIGRATED` · `REGRESSED` · `UNCHANGED`.
+
+`MIGRATED` and `REGRESSED` introduce **no new judgement**. They are
+`_Timeline.first_stop` and `_Timeline.reopened` persisted across two runs instead of
+computed inside one. The evidence bar is therefore already set and already tested: a
+row becomes `MIGRATED` only on a KNOWN migration observation with
+`classical_still_accepted` false. A configuration file that claims an upgrade moves
+nothing — the same rule §5.7 already enforces, now visible across time.
+
+**Done when:** two real scans of the same target, taken before and after a real
+change to the Tier A endpoint, produce a diff in which at least one row moves, and
+the move is justified by an observation rather than a declaration.
+
+### P14 — Agility evidence (narrowed from the review's proposal)
+
+**Falls under:** P1 (source adapter, done), P3 (config adapter, done), P4 (TLS, done).
+All three already observe what this phase names; none of them names it.
+
+The review proposed six fields. Three are adopted, one is deferred, **two are
+refused**.
+
+| Field | Verdict | Where the evidence already is |
+|---|---|---|
+| `algorithm_selection` — `HARDCODED` / `CONFIGURATION_DRIVEN` / `UNKNOWN` | adopt | The source rules already split literal from non-literal: `TokenVault`'s literal `AES/GCM/NoPadding` (PAY-003) against `KeyWrapService`'s `props.getTransformation()` resolved through the config chain (PAY-001). This is that distinction, named. |
+| `hybrid_capable` | adopt, KNOWN only when observed | The TLS adapter's `negotiated_group`. A configured cipher list is INFERRED at best, never KNOWN. |
+| `provider_pluggable` | adopt, INFERRED ceiling | JCA provider indirection is readable from source; an actual provider registration is not, so UNKNOWN is the default and INFERRED is the maximum. |
+| `certificate_rotation` | **defer to P13** | Not a field. It needs the same certificate seen at two times, which is exactly what the run store produces. Putting it on a Finding would imply a single scan can see it. |
+| `migration_complexity` | **refuse** | It is a score. Slide 2 claims "no weights, no score, no model — lexicographic order only," and §5.10 ranks by window, not by effort. Adding this field would falsify the headline claim in exchange for a number nobody can defend. |
+| `hardcoded` as a bare boolean | **refuse** | Collapses `HARDCODED` and "we could not tell" into one value. Three states or none. |
+
+**Done when:** every agility field carries its own epistemic state like every other
+field in the model, and `check_data_citations.py` still passes.
+
+### P15 — Evidence graph view
+
+**Falls under:** P6 (correlation — recorded above as "partial, done for its defined
+scope"). The data already exists; only the rendering does not.
+
+`CorrelationReport` already carries the assets, the `same-object` relationships
+gated through `IDENTITY-CERT-DER-001`, and the `shares_public_key_unclaimed` pairs
+that deliberately are *not* relationships. That is a graph in everything but
+presentation.
+
+Deliverables: a graph tab in the dashboard, and `ecdat correlate --format graph`.
+
+**Hard requirements, because this is the easiest place in the whole project to
+draw a lie:**
+
+- every edge renders its type *and* its epistemic basis;
+- `shares_public_key_unclaimed` renders as a visibly weaker edge than `same-object`,
+  and never collapses into it — there is no registered rule_id for that claim
+  (OI-006), and the renderer must not invent one by drawing the same line;
+- edges that do not exist are drawn as named gaps, not as blank space.
+
+**Explicitly not built, and not to be drawn:** the review sketched a seven-layer
+chain — crypto API → config → algorithm → library → certificate → service →
+protected data. Two of those edges are real (config → algorithm, from P3;
+certificate → service, from P4). **Library → usage is not**: the package and binary
+readers refuse to claim usage on purpose, and that refusal is tested. **Service →
+protected data is not**: the data class is DECLARED by a person, and there is still
+nowhere to declare it (P6's open item). Rendering the clean chain would be precisely
+the false-certainty failure this tool exists to prevent, on the one screen a judge
+is most likely to photograph.
+
+### P16–P19 — deck promises that are real requirements and are not built yet
+
+Revised 2026-09-20 after a second pass. The first pass framed these as claims to
+delete from the deck. That was wrong, and the correction matters: **the deck is the
+specification.** It states what Pramana is meant to be, and the build follows it.
+Deleting an unbuilt promise from the slide does not make the deck honest — it
+silently drops a genuine requirement and makes the *product* smaller.
+
+The honest move is the one this project already applies to its own findings: keep
+the claim, **say which state it is in**, and put the unbuilt half on the plan.
+Slide 5 already does exactly this with its "declared as targets — not yet measured"
+block. The platform row should work the same way.
+
+One of the five below is genuinely a deletion. Four are phases.
+
+| Deck promise | Where | Verified state, 2026-09-20 | Verdict |
+|---|---|---|---|
+| "PostgreSQL (JSONB evidence + snapshots)" | S3 platform | `store/__init__.py` is 0 bytes; no `postgres`/`psycopg`/`sqlalchemy` in `src/` or `pyproject.toml` | **Keep — P13 builds it.** Slide 5's "snapshots show new exposure, closed windows and certificate change" is the same requirement stated twice. Mark *planned* until P13 lands, then say what P13 actually built rather than naming a database for its own sake. |
+| "RBAC + audit log" | S3 platform **and** S4's challenge row | zero hits for `rbac`, `audit_log`, `audit log` in `src/` or `tests/` | **Keep — P17.** This is not decoration: it is the stated answer to the challenge *"the inventory is itself a sensitive asset."* Deleting it would weaken an answer the deck needs to give. Mark *planned*. |
+| "no egress (test-enforced)" | S3 **and** S4 | `harness/compose/docker-compose.yml` sets `internal: true` (H6); **no test asserts it** | **Keep — P18.** The requirement is right and already configured. Only the word *test-enforced* is ahead of the code, and closing that gap is one test. |
+| "the dates at which the ranking flips are printed" | S4, answering *"the arrival date Z is genuinely contested"* | zero hits for `flip`; the UI switches Z one scenario at a time, and nothing computes or prints the date a row changes band | **Keep — P19.** A real innovation claim, and cheap: the three scenarios and the closure engine's counterfactual re-evaluation already exist. |
+| "Trivy / **Syft**" | S3 sensors | no reference to Syft anywhere in `src/`, `tests/` or `tools/` | **The one real deletion.** Trivy already provides the package inventory this needs, and `packages-trivy` is built and live-proven. Syft would add a second tool for the same fact. Cut the word. |
+
+Separately, a wording fix rather than a phase: slide 2 (iv) promises recommendations
+*"with size, latency and compatibility impact."* `recommend/engine.py` and
+`data/pqc_options.yaml` carry byte counts and a cited handshake-failure rate —
+**size and compatibility, but no latency figure at all**, and no cited source for one
+exists in `data/`. Either vendor a citable latency measurement or say what is
+actually shown: *"with size, handshake-failure precedent and compatibility impact."*
+Inventing a latency number to match the slide is the one thing that must not happen.
+
+### P17 — RBAC and audit log
+
+**Falls under:** ledger phase 7 (*dashboard*, built). The API exists and is
+unauthenticated.
+
+The deck answers "the inventory is itself a sensitive asset" with four controls.
+Three are real — on-prem, no key material stored (enforced by
+`security/secrets.py` and tested), and the network definition. The fourth is not
+started. Minimum honest scope: an authenticated API, roles that distinguish reading
+the ledger from changing a scenario or exporting, and an append-only log of who
+read or exported what. Export is the sensitive verb here, not scanning.
+
+### P18 — Make no-egress test-enforced
+
+**Falls under:** the harness, not `src/`. Smallest phase on this list.
+
+`internal: true` is already set. Add the test that asserts a container on
+`payments-internal` cannot reach the outside world, so the deck's word
+*test-enforced* becomes true. Until it passes, the deck says "enforced by the
+network definition."
+
+### P19 — Scenario sensitivity: print the date the ranking flips
+
+**Falls under:** ledger phase 3 (*scenario engine*, built) and phase 5 (*closure
+engine*, built). Both halves exist; nothing joins them.
+
+`data/scenarios.yaml` carries all three Z dates, `Scenario.load_all()` already
+reads them, and `closure/engine.py` already re-evaluates a record under alternative
+inputs (`_algorithm_candidates`, `_start_candidates`, `_migration_candidates`, …) to
+work out what a missing fact could turn out to be. Printing "this row is BLEEDING
+under Z=2031 and 2036, SAVABLE under Z=2041" is that same counterfactual machinery
+pointed at the scenario axis instead of the evidence axis.
+
+Why it is worth a phase of its own: it converts the deck's weakest-sounding
+admission — *we do not know when Z is* — into its strongest move. A tool that says
+"here is the date at which this ranking changes, and here is the row that changes
+first" has turned a contested assumption into an output. Nothing else on this list
+buys that much for as little code.
+
+**Done when:** every ledger row carries its band under all three scenarios, and the
+UI shows which rows are scenario-sensitive without the operator having to flip the
+control and remember what it said before.
+
+### Ordering
+
+P16's wording decisions first — they are text, and two of them (Syft, latency) are
+corrections rather than promises.
+Then **P19**, because it is the cheapest genuinely new capability on this list and
+both halves already exist.
+Then **P13**, the only one that earns the word VERIFY, and which makes the snapshot
+and PostgreSQL promises true rather than deleted.
+Then **P15** (the data is already computed), **P14**, **P18** (one test), and
+**P17** last — it is real work and it changes nothing a judge can see.
+
+**Out of scope, restated:** nothing in this section introduces AI, scoring, or
+weighting into the analysis path. The review's own first recommendation was to keep
+entropy and PRNG-prediction research out of the SIH core; that agrees with CLAUDE.md
+and with slide 3's "no AI in the security path," and needs no phase.
