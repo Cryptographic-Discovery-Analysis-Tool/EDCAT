@@ -21,6 +21,17 @@ already do, just driven from argv instead of from Python. `tls-endpoint` has
 no `--live` path here yet: its live probe needs two coordinated tools from a
 declared vantage (`tools/prober/`), which is a deliberately separate
 concern from this single-process CLI, not an oversight.
+
+`correlate` runs several `scan`-shaped specs from one JSON plan file, in one
+process, and feeds every resulting `AdapterRunResult` straight into
+`ecdat.correlation.engine.correlate()` -- the one asset view across whichever
+adapters were in the plan, with cross-surface same-object relationships
+where a `der_sha256` hash actually matches. Kept in-process rather than
+reading back `scan`'s own JSON output: that run-document shape is a
+flattened, scorer-facing serialisation (fields become a list, not a dict),
+and reconstructing full `Finding`/`FieldValue` objects from it would be a
+lossy round-trip for no reason when the results are already sitting in
+memory right after running each scan.
 """
 from __future__ import annotations
 
@@ -43,6 +54,7 @@ from ecdat.adapters.packages.adapter import PackagesAdapter, TrivyScanBundle
 from ecdat.adapters.packages.adapter import live_scan_runner as live_packages_runner
 from ecdat.adapters.source.semgrep import SemgrepSourceAdapter
 from ecdat.adapters.tls.adapter import TlsEndpointAdapter, TlsProbeBundle
+from ecdat.correlation.engine import CorrelationReport, ForbiddenEdgeError, correlate
 from ecdat.model.evidence import ConfidenceBasis
 from ecdat.model.topology import ProbeTargetIdentity
 
@@ -406,6 +418,153 @@ def _scan(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- correlate: one asset view over several scans in one process ---------------
+
+#: Every flag `scan`'s parser defines, with the same default argparse itself
+#: would give it. A correlation plan entry only has to state what differs
+#: from these -- exactly like typing a shorter `scan` command line that
+#: relies on argparse's own defaults for everything else.
+_PLAN_ENTRY_DEFAULTS: dict[str, Any] = {
+    "input": None,
+    "out": None,
+    "live": False,
+    "property_key": [],
+    "active_profile": None,
+    "keystore_password": None,
+    "offline_db_path": None,
+    "pkcs11_module": None,
+    "pin": None,
+    "authenticated": False,
+    "pkcs11_slots_input": None,
+    "pkcs11_objects_input": None,
+    "pkcs11_mechanisms_input": None,
+    "rules_path": None,
+    "yara_input": None,
+    "readelf_header_input": None,
+    "readelf_dynamic_input": None,
+    "host": None,
+    "port": None,
+    "sni": None,
+    "vantage": None,
+    "consent": False,
+    "sslyze_input": None,
+    "negotiated_input": None,
+    "classical_only_input": None,
+}
+
+
+def _args_from_plan_entry(entry: dict[str, Any]) -> argparse.Namespace:
+    """One correlation-plan entry -> the same `argparse.Namespace` shape
+    `scan`'s own builders already consume, so a plan entry and a `scan`
+    command line are two spellings of exactly the same thing -- no second
+    code path to keep in sync with BUILDERS."""
+    for required in ("adapter", "target_id", "confidence", "confidence_justification"):
+        if required not in entry:
+            raise CliUsageError(f"plan entry missing required key {required!r}: {entry}")
+    merged = {**_PLAN_ENTRY_DEFAULTS, **entry}
+    return argparse.Namespace(**merged)
+
+
+def _correlate_document(report: CorrelationReport) -> dict[str, Any]:
+    """Serialise a CorrelationReport the same way `_run_document` serialises
+    an AdapterRunResult: fields as a list (not a dict) for a scorer's sake,
+    every epistemic state spelled out, nothing summarised away."""
+
+    def asset_document(asset) -> dict[str, Any]:
+        fields = []
+        for name, value in asset.fields.items():
+            entry: dict[str, Any] = {
+                "field": name,
+                "value": value.value,
+                "epistemic_state": value.state.value,
+                "evidence_refs": list(value.evidence_refs),
+            }
+            if value.resolution is not None:
+                entry["resolution_status"] = value.resolution.status.value
+                entry["resolution_reason"] = value.resolution.reason
+            fields.append(entry)
+        return {
+            "asset_id": asset.asset_id,
+            "scope_anchor": asset.scope_anchor,
+            "algorithm_family": asset.algorithm_family,
+            "parameters": asset.parameters,
+            "purpose": asset.purpose,
+            "finding_refs": list(asset.finding_refs),
+            "fields": fields,
+        }
+
+    return {
+        "source_adapter_ids": list(report.source_adapter_ids),
+        "assets": [asset_document(asset) for asset in report.assets],
+        "relationships": [
+            {
+                "type": relationship.type,
+                "source_entity": relationship.source_entity,
+                "target_entity": relationship.target_entity,
+                "evidence_basis": relationship.evidence_basis.value,
+                "epistemic_state": relationship.epistemic_state.value,
+                "rule_id": relationship.rule_id,
+                "evidence_refs": list(relationship.evidence_refs),
+            }
+            for relationship in report.relationships
+        ],
+        "shares_public_key_unclaimed": [list(pair) for pair in report.shares_public_key_unclaimed],
+    }
+
+
+def _correlate(args: argparse.Namespace) -> int:
+    try:
+        plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+    except OSError as exc:
+        print(f"could not read plan file {args.plan!r}: {type(exc).__name__}", file=sys.stderr)
+        return 2
+    except json.JSONDecodeError as exc:
+        print(f"plan file {args.plan!r} is not valid JSON: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(plan, list) or not plan:
+        print(f"plan file {args.plan!r} must be a non-empty JSON list of scan specs", file=sys.stderr)
+        return 2
+
+    results: list[AdapterRunResult] = []
+    for index, entry in enumerate(plan):
+        try:
+            entry_args = _args_from_plan_entry(entry)
+        except CliUsageError as exc:
+            print(f"plan entry {index}: {exc}", file=sys.stderr)
+            return 2
+        builder = BUILDERS.get(entry_args.adapter)
+        if builder is None:
+            print(f"plan entry {index}: unknown adapter {entry_args.adapter!r}", file=sys.stderr)
+            return 2
+        basis = ConfidenceBasis(
+            source="ADAPTER_DECLARED", justification=entry_args.confidence_justification
+        )
+        try:
+            adapter, target = builder(entry_args, basis)
+        except CliUsageError as exc:
+            print(f"plan entry {index} ({entry_args.adapter}): {exc}", file=sys.stderr)
+            return 2
+        results.append(adapter.run(target))
+
+    try:
+        report = correlate(results)
+    except ForbiddenEdgeError as exc:
+        print(f"correlation refused: {exc}", file=sys.stderr)
+        return 3
+
+    document = _correlate_document(report)
+    output = json.dumps(document, indent=2, sort_keys=False)
+    if args.out:
+        Path(args.out).write_text(output + "\n", encoding="utf-8")
+        print(
+            f"{len(results)} scan(s) -> {len(report.assets)} asset(s), "
+            f"{len(report.relationships)} relationship(s) -> {args.out}"
+        )
+    else:
+        print(output)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ecdat", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -514,6 +673,20 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     scan.set_defaults(func=_scan)
+
+    correlate_parser = subparsers.add_parser(
+        "correlate",
+        help="run several scans from a JSON plan file and produce one asset view",
+    )
+    correlate_parser.add_argument(
+        "--plan",
+        required=True,
+        help="JSON file: a list of scan specs, each the same keys as `scan`'s own flags "
+        "(adapter, target_id, confidence, confidence_justification required; everything "
+        "else optional, defaulting the same way `scan` itself defaults it)",
+    )
+    correlate_parser.add_argument("--out", help="write the correlation report here (default: stdout)")
+    correlate_parser.set_defaults(func=_correlate)
 
     args = parser.parse_args(argv)
     return args.func(args)

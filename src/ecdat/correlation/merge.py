@@ -16,20 +16,39 @@ explicitly out of scope here. `src/ecdat/correlation/gate.py` is the other
 half of this phase: a pure check over whatever Relationships an orchestrator
 eventually assembles.
 
-Everything the merge key reads comes only from fields a real adapter Finding
-actually populates (grounded in `CertificateAdapter._fields()`,
-src/ecdat/adapters/certs/adapter.py) -- `purpose` is not one of them (that is
-function.classifier's separate job, done later with more context than one
-Finding carries), so it is never part of the grouping key and never invented.
+Everything a merge key reads comes only from fields a real adapter Finding
+actually populates (grounded in each cited adapter's own `_fields()`
+method) -- `purpose` is never one of them (that is function.classifier's
+separate job, done later with more context than one Finding carries), so it
+is never part of any grouping key and never invented.
+
+**Which surfaces get Part 5's aggressive algorithm-based merge, and which
+don't.** Part 5's literal key `(algorithm_family, parameters, purpose,
+scope_anchor)` was written about *cryptographic algorithm assets* --
+"all RSA-2048 signing in repo X collapses to one asset" is its own example.
+Only two adapters today actually describe an algorithm-in-use the way that
+key means: `certs-x509` (public_key_algorithm/size/curve) and `tls-endpoint`
+(the negotiated group/suite/protocol). `_KEY_SIGNATURES` below recognises
+exactly those two field-shapes, each grounded in the cited adapter's own
+`_fields()` code, and NO OTHERS. A Finding that matches neither signature
+(packages-trivy, images-cbomkit-theia, hsm-pkcs11, binary-yara-readelf,
+config-chain-spring, source-semgrep) gets **no** algorithm-based merge at
+all: it becomes its own single-Finding CryptoAsset. That is the conservative
+default, and it is deliberate -- inventing an untested merge rule for a
+surface Part 5 never discussed (e.g. "two Trivy packages with the same name
+merge") would be exactly the kind of unfounded rule CLAUDE.md's
+anti-hallucination section exists to prevent. Extending this to a new
+surface later is a one-line addition to `_KEY_SIGNATURES`, made when that
+surface's own field shape is known -- not a guess made here ahead of time.
 
 `algorithm_family` is deliberately NOT part of the strict grouping-equality
-key either, even though Part 5's literal key tuple lists it. See
-docs/deviations.md DEV-007 for why: two Findings that disagree on it must
-still be able to land in one CryptoAsset with a CONFLICTING field (R-MONOTONE
--- silently reporting "two unrelated, individually-certain assets" instead of
-"one asset, disputed field" would manufacture unsupported *distinctness*).
-The grouping key here is `(parameters, scope_anchor)`; `algorithm_family`
-flows through the same agree/CONFLICT field-merge path as every other field.
+key for the certs signature, even though Part 5's literal key tuple lists
+it. See docs/deviations.md DEV-007 for why: two Findings that disagree on it
+must still be able to land in one CryptoAsset with a CONFLICTING field
+(R-MONOTONE -- silently reporting "two unrelated, individually-certain
+assets" instead of "one asset, disputed field" would manufacture unsupported
+*distinctness*). `algorithm_family` flows through the same agree/CONFLICT
+field-merge path as every other field instead.
 """
 from __future__ import annotations
 
@@ -42,13 +61,42 @@ from ecdat.model.epistemic import EpistemicState, Resolution, ResolutionStatus
 from ecdat.model.field_value import FieldValue
 from ecdat.model.finding import Finding
 
-#: Field names read to build the merge key's algorithm-family/parameters
-#: components. Grounded in what an existing adapter actually emits --
-#: CertificateAdapter._fields() (src/ecdat/adapters/certs/adapter.py) -- not
-#: invented. A future surface's adapter may need its own key-field mapping
-#: added here; none is guessed at for a surface that doesn't exist yet.
-_ALGORITHM_FAMILY_FIELD = "public_key_algorithm"
-_PARAMETER_FIELDS: tuple[str, ...] = ("public_key_size", "public_key_curve")
+#: (required field-signature, ordered key fields) pairs. See "Which surfaces
+#: get Part 5's aggressive algorithm-based merge, and which don't" above.
+#: Checked in order; the first signature that is a subset of a Finding's
+#: field names wins. Field names are quoted verbatim from the cited
+#: adapter's own `_fields()` method -- never guessed.
+_KEY_SIGNATURES: tuple[tuple[frozenset[str], tuple[str, ...]], ...] = (
+    # certs-x509 -- src/ecdat/adapters/certs/adapter.py CertificateAdapter._fields()
+    # ("public_key_algorithm" alone disambiguates: hsm-pkcs11 has a
+    # similarly-named "algorithm_family" field, never this exact name).
+    # `algorithm_family` is deliberately NOT one of the key fields here --
+    # see DEV-007 in the module docstring: two Findings disagreeing on it
+    # must still land in one CryptoAsset with a CONFLICTING field, which
+    # would be structurally impossible if algorithm were part of the key
+    # two disagreeing Findings would never even group together.
+    (
+        frozenset({"public_key_algorithm"}),
+        ("public_key_size", "public_key_curve"),
+    ),
+    # tls-endpoint -- src/ecdat/adapters/tls/adapter.py TlsEndpointAdapter._fields()
+    # `negotiated_group` is excluded from the key for the same DEV-007
+    # reason as certs' algorithm above; `negotiated_cipher_suite` and
+    # `negotiated_protocol` distinguish genuinely different negotiated
+    # configurations observed at the same scope_anchor.
+    (
+        frozenset({"negotiated_group", "negotiated_cipher_suite"}),
+        ("negotiated_cipher_suite", "negotiated_protocol"),
+    ),
+)
+
+#: Candidate field names for CryptoAsset's plain `algorithm_family` readback,
+#: tried in this order. Convenience only -- the evidentiary field is
+#: whichever of these actually exists in `fields`, per-Finding, unchanged.
+_ALGORITHM_FAMILY_READBACK_CANDIDATES: tuple[str, ...] = (
+    "public_key_algorithm",
+    "negotiated_group",
+)
 
 
 class MergeKey(NamedTuple):
@@ -65,8 +113,26 @@ def _field_value(finding: Finding, name: str):
     return field.value if field is not None else None
 
 
+def _key_fields_for(finding: Finding) -> tuple[str, ...] | None:
+    """Which signature (if any) this Finding's fields match. None means no
+    recognised algorithm-shaped signature -- see the module docstring."""
+    names = frozenset(finding.fields)
+    for signature, key_fields in _KEY_SIGNATURES:
+        if signature <= names:
+            return key_fields
+    return None
+
+
 def _merge_key(finding: Finding) -> MergeKey:
-    parameters = tuple(_field_value(finding, name) for name in _PARAMETER_FIELDS)
+    key_fields = _key_fields_for(finding)
+    if key_fields is None:
+        # No recognised algorithm-shaped signature: one asset per Finding,
+        # the conservative default (module docstring). `finding_id` is
+        # unique per Finding by the Finding model's own contract, so this
+        # can never accidentally collide with another Finding's key.
+        parameters: tuple = (finding.finding_id,)
+    else:
+        parameters = tuple(_field_value(finding, name) for name in key_fields)
     # scope_anchor: naturally the surface string already on the Finding (e.g.
     # "certdir:<root>") -- Part 5: "scope_anchor is per-surface: repo path,
     # image + layer digest, host:port, or binary path." This is what makes
@@ -131,6 +197,14 @@ def _plain_readback(fields: dict[str, FieldValue], name: str) -> str | None:
     return str(field.value)
 
 
+def _algorithm_family_readback(fields: dict[str, FieldValue]) -> str | None:
+    for name in _ALGORITHM_FAMILY_READBACK_CANDIDATES:
+        value = _plain_readback(fields, name)
+        if value is not None:
+            return value
+    return None
+
+
 def merge_within_surface(findings: Iterable[Finding]) -> tuple[CryptoAsset, ...]:
     """Group Findings from ONE adapter/surface into CryptoAsset records.
 
@@ -144,8 +218,11 @@ def merge_within_surface(findings: Iterable[Finding]) -> tuple[CryptoAsset, ...]
     function; see the module docstring.
     """
     groups: dict[MergeKey, list[Finding]] = {}
+    matched_signature: dict[MergeKey, bool] = {}
     for finding in findings:
-        groups.setdefault(_merge_key(finding), []).append(finding)
+        key = _merge_key(finding)
+        groups.setdefault(key, []).append(finding)
+        matched_signature[key] = _key_fields_for(finding) is not None
 
     assets: list[CryptoAsset] = []
     for key, group in groups.items():
@@ -164,8 +241,12 @@ def merge_within_surface(findings: Iterable[Finding]) -> tuple[CryptoAsset, ...]
             CryptoAsset(
                 asset_id=_asset_id(key),
                 scope_anchor=key.scope_anchor,
-                algorithm_family=_plain_readback(fields, _ALGORITHM_FAMILY_FIELD),
-                parameters=_parameters_string(key.parameters),
+                algorithm_family=_algorithm_family_readback(fields),
+                # `key.parameters` is the Finding's own finding_id, not real
+                # crypto parameters, when no signature matched (see
+                # `_merge_key`) -- do not read that back as if it meant
+                # something about the asset's algorithm parameters.
+                parameters=_parameters_string(key.parameters) if matched_signature[key] else None,
                 purpose=_plain_readback(fields, "purpose"),
                 finding_refs=tuple(finding.finding_id for finding in group),
                 fields=fields,
