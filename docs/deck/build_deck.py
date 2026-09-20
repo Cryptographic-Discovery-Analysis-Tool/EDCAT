@@ -22,7 +22,7 @@ from pptx.util import Inches, Pt
 HERE = pathlib.Path(__file__).parent
 SRC = pathlib.Path(r"C:\Users\athar\Downloads\ECDAT_Pramana_SIH2026_Idea.pptx")
 DST = HERE / "out" / "ECDAT_Pramana_SIH2026_Idea.pptx"
-SHOTS = HERE / "shots"
+SHOTS = HERE / "screenshots"
 
 # --- palette, lifted from the deck it replaces -------------------------------
 INK = RGBColor(0x12, 0x28, 0x3A)
@@ -195,27 +195,34 @@ def slide2(s):
         txt(s, bx + 0.42, y + 0.14, bw - 0.55, 0.26, name, size=12.5, color=col, bold=True)
         txt(s, bx + 0.18, y + 0.46, bw - 0.36, 0.48, [l1, l2], size=9.5, spacing=1.06)
     txt(s, LEFT_X, y + 1.10, FULL_W, 0.22,
-        "A fifth band, SAFE, covers what Shor does not break \u2014 and hybrid key exchange used from the start.",
+        "A fifth band, SAFE, covers what Shor does not break. Symmetric keys are reported separately as a "
+        "key-size question under Grover \u2014 never given a deadline they do not have.",
         size=9, color=FAINT, italic=True)
 
-    y = 4.34
+    y = 4.30
     head(s, LEFT_X, y, 5.9, "HOW IT ADDRESSES THE PROBLEM", color=GREEN)
-    rows(s, LEFT_X + 0.02, y + 0.34, 5.95, [
+    txt(s, LEFT_X + 0.22, y + 0.28, 5.9, 0.22,
+        "DISCOVER  \u2192  PROVE  \u2192  PRIORITISE  \u2192  RECOMMEND  \u2192  VERIFY",
+        size=9, color=GREEN, bold=True)
+    rows(s, LEFT_X + 0.02, y + 0.60, 5.95, [
         ("Catalogue", "algorithms, keys, certificates, protocols, libraries, HSMs, cloud KMS"),
         ("Quantum risk", "Shor-broken secrecy and identity, on two separate clocks"),
-        ("Classify + Mosca", "data lifetime X and criticality \u2014 Mosca, extended to two clocks"),
-        ("Recommend", "FIPS 203 / 204 / 205 and hybrid X25519MLKEM768, keyed by purpose"),
+        ("Classify + Mosca", "type, data lifetime X and business criticality \u2014 Mosca, on two clocks"),
+        ("Recommend", "FIPS 203 / 204 / 205 and hybrid, by purpose \u2014 size, latency, cost, compatibility"),
         ("Report", "CycloneDX 1.6 CBOM (ECMA-424) plus an interactive evidence console"),
-    ], label_w=1.45, gap=0.455, bullet=GREEN)
+    ], label_w=1.45, gap=0.415, bullet=GREEN)
 
     head(s, 6.95, y, 5.9, "INNOVATION AND UNIQUENESS", color=RED)
-    rows(s, 6.97, y + 0.34, 5.95, [
+    txt(s, 6.95 + 0.22, y + 0.28, 5.9, 0.22,
+        "RANKED, NEVER SCORED:   band  \u2192  business criticality  \u2192  longest window",
+        size=9, color=RED, bold=True)
+    rows(s, 6.97, y + 0.60, 5.95, [
         ("Two clocks", "secrecy leaks before Z; signatures only fail after Z"),
-        ("Ranked by window", "no weights, no score, no model \u2014 lexicographic order only"),
+        ("No weights", "lexicographic on categorical fields \u2014 no score anyone has to defend"),
         ("Status per field", "Observed / Inferred / Declared / Unknown \u2014 Unknown is a result"),
         ("Closure engine", "names the one fact that would settle an unbounded row"),
         ("Replayable", "every band recomputes from its stored record \u2014 nothing is typed in"),
-    ], label_w=1.45, gap=0.455, bullet=RED)
+    ], label_w=1.45, gap=0.415, bullet=RED)
 
 
 # =============================================================================
@@ -223,10 +230,10 @@ def slide2(s):
 # =============================================================================
 def slide3(s):
     clear(s)
-    subtitle(s, "Deterministic pipeline  ·  two clocks  ·  reused sensors  ·  no AI in the security path")
+    subtitle(s, "Deterministic pipeline  ·  two clocks  ·  reused sensors  ·  AI may suggest, only evidence decides")
 
     y = head(s, LEFT_X, 0.98, 9.5,
-             "METHODOLOGY AND PROCESS FOR IMPLEMENTATION  \u2014  DETERMINISTIC, REPLAYABLE, NO AI IN THE SECURITY PATH")
+             "METHODOLOGY AND PROCESS FOR IMPLEMENTATION  \u2014  DETERMINISTIC, REPLAYABLE, EVIDENCE-GATED")
     steps = [
         ("OBSERVE", "sensors run"), ("STATUS", "evidence per field"),
         ("CORRELATE", "same object?"), ("BIND", "data class \u2192 X, A"),
@@ -248,7 +255,7 @@ def slide3(s):
                 align=PP_ALIGN.CENTER)
 
     # --- clock 1: confidentiality --------------------------------------------
-    cy = 1.92
+    cy = 1.86
     rect(s, LEFT_X, cy, 7.52, 2.60, fill=PANEL, radius=0.05)
     dot(s, LEFT_X + 0.22, cy + 0.19, 0.145, RED)
     txt(s, LEFT_X + 0.45, cy + 0.13, 7.0, 0.26,
@@ -316,13 +323,13 @@ def slide3(s):
         txt(s, ax + 0.30, ry + 0.21, 4.13, 0.18, action, size=7.5, color=FAINT)
         ry += 0.36
 
-    rect(s, ax + 0.30, cy + 2.30, 4.13, 0.32, fill=WHITE, line=RULE)
-    txt(s, ax + 0.30, cy + 2.37, 4.13, 0.22,
+    rect(s, ax + 0.30, cy + 2.28, 4.13, 0.30, fill=WHITE, line=RULE)
+    txt(s, ax + 0.30, cy + 2.34, 4.13, 0.22,
         "A root CA is urgent \u2014 but it is not bleeding.", size=9, color=INK, bold=True,
         italic=True, align=PP_ALIGN.CENTER)
 
     # --- technologies + prototype --------------------------------------------
-    ty = 4.66
+    ty = 4.56
     head(s, LEFT_X, ty, 8.0, "TECHNOLOGIES TO BE USED")
     tech = [
         ("Evidence sensors", GREEN,
@@ -330,19 +337,29 @@ def slide3(s):
          "Trivy  \u00b7  cbomkit-theia  \u00b7  YARA + readelf  \u00b7  PKCS#11 (SoftHSM2)  \u00b7  cloud KMS metadata"),
         ("Deterministic core", BLUE,
          "Python 3.12  \u00b7  evidence model  \u00b7  crypto-function classifier  \u00b7  temporal model  \u00b7  "
-         "scenario engine  \u00b7  two ledgers  \u00b7  closure engine  \u00b7  replay record"),
+         "scenario engine  \u00b7  business-context binding (owner \u00b7 criticality \u00b7 data class)  \u00b7  "
+         "two ledgers  \u00b7  closure engine  \u00b7  replay record"),
         ("Platform", INK,
          "PostgreSQL (JSONB evidence + snapshots)  \u00b7  FastAPI  \u00b7  React / Vite  \u00b7  CycloneDX 1.6  \u00b7  "
          "Docker Compose, no egress  \u00b7  RBAC + audit log  \u00b7  key material never stored"),
     ]
     ry = ty + 0.34
     for label, col, value in tech:
-        rect(s, LEFT_X, ry, 8.00, 0.54, fill=PANEL, radius=0.10)
-        txt(s, LEFT_X + 0.18, ry + 0.15, 1.62, 0.24, label, size=9.5, color=col, bold=True)
-        txt(s, LEFT_X + 1.82, ry + 0.06, 6.02, 0.46, value, size=8, color=MUTED, spacing=1.12)
-        ry += 0.585
+        rect(s, LEFT_X, ry, 8.00, 0.46, fill=PANEL, radius=0.10)
+        txt(s, LEFT_X + 0.16, ry + 0.11, 1.62, 0.24, label, size=9.5, color=col, bold=True)
+        txt(s, LEFT_X + 1.80, ry + 0.04, 6.06, 0.42, value, size=8, color=MUTED, spacing=1.10)
+        ry += 0.50
+
+    rect(s, LEFT_X, ry + 0.02, 8.00, 0.44, fill=BLUE_BG, radius=0.10)
+    txt(s, LEFT_X + 0.16, ry + 0.09, 7.70, 0.36,
+        [[("AI may suggest. Only evidence may decide.  ", {"bold": True, "color": INK}),
+          ("No model sits in the detection, correlation, banding or recommendation path — those are "
+           "rule-driven and replayable. A model’s claim may still enter, but only as any third "
+           "party’s does: DECLARED, to be confirmed by observation before it moves a deadline.", {"color": MUTED})]],
+        size=7.5, spacing=1.14)
+
     picture(s, "strip_replay.png", 8.62, ty + 0.34, 4.29)
-    txt(s, 8.62, ty + 1.72, 4.29, 0.42,
+    txt(s, 8.62, ty + 1.70, 4.29, 0.58,
         "Working prototype \u2014 every verdict carries the rule, the fingerprint of its inputs, "
         "and a live re-run that must return the same answer.", size=8, color=FAINT, italic=True,
         spacing=1.1)
@@ -454,7 +471,7 @@ def slide5(s):
         "CISOs  \u00b7  PKI and crypto teams  \u00b7  Indian CII operators (power, telecom, BFSI, government)  \u00b7  "
         "banks and public-sector IT", size=8.5, color=INK)
 
-    ry = y + 0.66
+    ry = y + 0.58
     for label, col, value in [
         ("Security", RED, "Separates what migration can still protect from what it can no longer help"),
         ("Operational", BLUE, "Analysts see the evidence and its status \u2014 not a verdict from a black box"),
@@ -464,17 +481,17 @@ def slide5(s):
         dot(s, LEFT_X + 0.02, ry + 0.055, 0.095, col)
         txt(s, LEFT_X + 0.20, ry, 1.38, 0.22, label, size=9.5, color=INK, bold=True)
         txt(s, LEFT_X + 1.58, ry, 4.64, 0.34, value, size=9.5, color=MUTED, spacing=1.08)
-        ry += 0.40
+        ry += 0.365
 
-    rect(s, LEFT_X, ry + 0.06, 6.22, 0.56, fill=PANEL, radius=0.08)
-    txt(s, LEFT_X + 0.18, ry + 0.14, 5.90, 0.42,
+    rect(s, LEFT_X, ry + 0.04, 6.35, 0.52, fill=PANEL, radius=0.08)
+    txt(s, LEFT_X + 0.18, ry + 0.11, 6.00, 0.42,
         "The DST PQC Task Force report (Feb 2026) records an expectation of a CII cryptographic "
         "inventory by 2027. This is that inventory \u2014 with the evidence behind every entry.",
         size=8.5, color=INK, spacing=1.1)
 
-    by = ry + 0.84
+    by = ry + 0.74
     head(s, LEFT_X, by, 6.3, "BENEFITS OF THE SOLUTION  (social, economic, governance)", color=GREEN)
-    ry = by + 0.34
+    ry = by + 0.32
     for label, value in [
         ("No false assurance", "Blind spots are reported per surface \u2014 \u201c12 found\u201d never means \u201cwe are clean\u201d"),
         ("Right-sized migration", "Options follow cryptographic purpose; Unknown purpose \u2192 no recommendation"),
@@ -483,7 +500,21 @@ def slide5(s):
         dot(s, LEFT_X + 0.02, ry + 0.055, 0.095, GREEN)
         txt(s, LEFT_X + 0.20, ry, 1.62, 0.22, label, size=9.5, color=INK, bold=True)
         txt(s, LEFT_X + 1.82, ry, 4.40, 0.34, value, size=9.5, color=MUTED, spacing=1.08)
-        ry += 0.42
+        ry += 0.375
+
+    # --- findings roll up into a migration programme --------------------------
+    ry += 0.02
+    stages = [("DISCOVERED", BLUE), ("EXPOSED", RED), ("PLANNED", AMBER), ("VERIFIED", GREEN)]
+    subs = ["every artefact", "banded + dated", "owners \u00b7 blockers", "re-scan proves it"]
+    sw, sgap = 1.49, 0.13
+    for i, ((name, col), sub) in enumerate(zip(stages, subs)):
+        sx = LEFT_X + i * (sw + sgap)
+        rect(s, sx, ry, sw, 0.46, fill=PANEL, radius=0.12)
+        txt(s, sx, ry + 0.07, sw, 0.20, name, size=8.5, color=col, bold=True, align=PP_ALIGN.CENTER)
+        txt(s, sx, ry + 0.25, sw, 0.18, sub, size=7, color=FAINT, align=PP_ALIGN.CENTER)
+        if i < 3:
+            txt(s, sx + sw, ry + 0.11, sgap, 0.20, "\u203a", size=10, color=FAINT,
+                align=PP_ALIGN.CENTER)
 
     # --- prototype image ------------------------------------------------------
     cx = 6.85
@@ -525,9 +556,11 @@ def slide6(s):
         ("5", "CycloneDX CBOM  \u00b7  ECMA-424",
          "The standard model for cryptographic assets: cryptoProperties, confidence, detection context.",
          "cyclonedx.org/capabilities/cbom"),
-        ("6", "NIST NCCoE SP 1800-38 \u2014 Migration to Post-Quantum Cryptography",
-         "Enterprise crypto discovery, inventory and migration-planning practice.",
-         "nccoe.nist.gov"),
+        ("6", "NIST NCCoE SP 1800-38 (preliminary draft)  \u00b7  NIST CSWP 39 (final)",
+         "Vol B cryptographic discovery; Vol C interoperability and performance testing. CSWP 39 defines "
+         "crypto agility as replacing cryptography across protocols, software, hardware and firmware "
+         "while preserving operations.",
+         "nccoe.nist.gov  \u00b7  csrc.nist.gov/pubs/cswp/39"),
     ]
     ry = 1.34
     for i, (n, title, desc, link) in enumerate(refs):
@@ -552,9 +585,9 @@ def slide6(s):
 
     head(s, 6.95, ty, 6.0, "STATUS DISCIPLINE", color=AMBER)
     txt(s, 6.97, ty + 0.32, 5.95, 0.60,
-        "Final: FIPS 203 / 204 / 205.   Not final: FIPS 206 (FN-DSA), HQC, NIST IR 8547.\n"
-        "No Q-Day date is asserted \u2014 Z is always a cited scenario, and three are carried.\n"
-        "Every tool claim is re-tested against pinned versions, and the run is recorded.",
+        "Final: FIPS 203 / 204 / 205, NIST CSWP 39.   Not final: FIPS 206 (FN-DSA), HQC, NIST IR 8547,\n"
+        "SP 1800-38 (preliminary draft).   No Q-Day date is asserted \u2014 Z is always a cited scenario,\n"
+        "and three are carried. Every tool claim is re-tested against pinned versions and recorded.",
         size=8.5, color=MUTED, spacing=1.15)
 
     rect(s, LEFT_X, 6.10, FULL_W, 0.62, fill=BLUE_BG, radius=0.07)
