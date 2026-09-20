@@ -17,6 +17,7 @@ from cryptography.x509.oid import NameOID
 
 from ecdat.adapters.base import ScanTarget
 from ecdat.adapters.certs.adapter import CertificateAdapter
+from ecdat.adapters.images.adapter import ImagesAdapter
 from ecdat.adapters.tls.adapter import TlsEndpointAdapter, TlsProbeBundle
 from ecdat.correlation.engine import ForbiddenEdgeError, correlate
 from ecdat.model.epistemic import EpistemicState
@@ -29,6 +30,8 @@ BASIS = ConfidenceBasis(source="ADAPTER_DECLARED", justification="test invocatio
 # Real recorded material, both already committed in this repo.
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "recorded"
 SSLYZE_JSON = FIXTURES / "sslyze" / "6.2.0" / "tier_a_edge_lb.raw.json"
+THEIA_SAMPLE = FIXTURES / "theia" / "edge-2026-09-19" / "edge-lb.sample.json"
+ISRG_ROOT_X2_PEM = FIXTURES / "theia" / "edge-2026-09-19" / "certs" / "isrg-root-x2.pem"
 # The sibling harness repo's real Tier A PKI -- the file `cert.pem` here is
 # the exact certificate the sslyze fixture above recorded live from the wire.
 HARNESS_PKI = Path(__file__).resolve().parents[4] / "ecdat-harness" / "harness" / "build" / "out"
@@ -235,3 +238,42 @@ def test_the_wire_certificate_and_the_on_disk_certificate_are_the_same_object():
         tls_asset.asset_id,
         certs_asset.asset_id,
     }
+
+
+# --- the third surface: container images, via independent re-extraction ------
+
+
+def test_a_certificate_found_in_an_image_and_the_same_certificate_on_disk_are_linked(tmp_path):
+    """All three surfaces this session extended, together: certs-x509 reads
+    the certificate off disk; images-cbomkit-theia's own CBOM says nothing
+    about its bytes, so its adapter independently re-extracts and hashes the
+    exact file cbomkit-theia named -- both real, both real hashes, and
+    correlate() links them the same way it already links certs-x509 and
+    tls-endpoint."""
+    import json
+
+    (tmp_path / "cert.pem").write_bytes(ISRG_ROOT_X2_PEM.read_bytes())
+    certs_result = CertificateAdapter(base_confidence=0.9, confidence_basis=BASIS).run(
+        ScanTarget(target_id="disk", locator=str(tmp_path))
+    )
+
+    document = json.loads(THEIA_SAMPLE.read_text(encoding="utf-8"))
+    images_result = ImagesAdapter(
+        base_confidence=0.9,
+        confidence_basis=BASIS,
+        runner=lambda target: document,
+        file_reader=lambda target, path: ISRG_ROOT_X2_PEM.read_bytes(),
+    ).run(ScanTarget(target_id="image", locator="sample-image:latest"))
+
+    report = correlate([certs_result, images_result])
+
+    assert set(report.source_adapter_ids) == {"certs-x509", "images-cbomkit-theia"}
+    same_object = [r for r in report.relationships if r.type == "same-object"]
+    assert len(same_object) == 1
+    assert same_object[0].rule_id == "IDENTITY-CERT-DER-001"
+    disk_asset = next(a for a in report.assets if a.scope_anchor == f"certdir:{tmp_path}")
+    linked_entities = {same_object[0].source_entity, same_object[0].target_entity}
+    assert disk_asset.asset_id in linked_entities
+    other_id = next(iter(linked_entities - {disk_asset.asset_id}))
+    other_asset = next(a for a in report.assets if a.asset_id == other_id)
+    assert other_asset.scope_anchor.startswith("image:")
