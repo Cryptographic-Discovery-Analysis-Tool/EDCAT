@@ -1,0 +1,17 @@
+time="2026-09-19T19:54:52Z" level=info msg="try to fetch image ecdat-harness-tier-a-payment-gateway:latest ..."
+time="2026-09-19T19:55:00Z" level=info msg="successfully download image ecdat-harness-tier-a-payment-gateway:latest with id 37ae333c34dbd79c7e29d4d546a1fa734bfb6fe667946575330f4407602ff4b0"
+time="2026-09-19T19:55:00Z" level=info msg="Since no BOM is provided as input the java security check is automatically disabled."
+time="2026-09-19T19:55:00Z" level=warning msg="No BOM provided or provided BOM does not have any components, this scan will only add components"
+time="2026-09-19T19:55:00Z" level=info msg="=> Running Certificate File Plugin"
+time="2026-09-19T19:55:19Z" level=error msg="could not scan image: plugin (Certificate File Plugin) failed to updated components of bom; max allowable directory traversal depth reached (maybe a link cycle?)"
+
+--- re-run with -p secrets only (isolating the plugin) ---
+
+time="2026-09-19T20:01:49Z" level=error msg="Error while trying to scan for secrets" error="max allowable directory traversal depth reached (maybe a link cycle?)"
+time="2026-09-19T20:01:50Z" level=error msg="could not scan image: plugin (Secret Detection Plugin) failed to updated components of bom; max allowable directory traversal depth reached (maybe a link cycle?)"
+
+Root cause: the bundled JRE under /usr/lib/jvm/default-jvm/jre/ contains a long chain of nested
+jre/jre/jre/.../jre symlinks within the image layer (observed depth: 250+ segments in the
+directory walker's own log lines before it gave up), which exceeds cbomkit-theia's directory
+traversal depth limit. This is a property of the base image, not of the scanning tool being
+misused.

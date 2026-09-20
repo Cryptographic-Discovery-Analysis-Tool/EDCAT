@@ -211,7 +211,7 @@ pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-That runs 306 tests, including all 18 worked examples from the frozen
+That runs 351 tests, including all 18 worked examples from the frozen
 specification. The calculation engine is real and fully tested. **The part that
 goes and looks at your actual systems is not finished yet** — see the checklist.
 
@@ -244,26 +244,32 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [x] **A running test enterprise** — the reference containers build and run, and the load balancer answers a real TLS handshake
 - [x] **Certificate reader** — reads certificates from PEM, DER and PKCS#12 files. Holds private keys in memory and provably emits none
 - [x] **Live connection prober** — actually connects and records what was negotiated, from a stated vantage, and separately checks whether the old encryption still works
+- [x] **Config file resolver** — works out which setting actually wins across `application.yml`, profile files, Kubernetes manifests and same-repo ConfigMaps, per Spring's real precedence order. Never reports a resolved value as fully certain — an answer is always *our best reading*, not a watched fact — and if a command-line flag or system property could be overriding it, it says so instead of guessing
+- [x] **Package/dependency scanner** — runs Trivy against a container filesystem and lists what's bundled inside. Deliberately says nothing about whether any of it is actually *used* — a library sitting unused in a jar is a very different fact from one the code calls into, and this tool refuses to blur that line
+- [x] **Within-surface asset merging** — the same key found twice in one place (say, two certificate files naming the same key) becomes one entry, not two; a genuine disagreement between them becomes a flagged conflict, never a silent guess
+- [x] **Forbidden-correlation gate** — a check that blocks the tool from ever claiming two different keys are "the same object" without the one specific kind of proof that actually supports that claim
+- [x] **Apache-2.0 licence file**
 
 ### Not done yet
 
 - [ ] **Java keystore formats** — JKS and BCFKS are not read yet; they are reported as skipped, never as absent
-- [ ] **Config file resolver** — work out which setting actually wins
-- [ ] **Container and package scanning**
-- [ ] **Hardware security module and cloud key reader**
-- [ ] **Compiled binary scanning**
+- [ ] **Container image scanner** — a certificate/secret-in-image reader (`cbomkit-theia`) has been test-driven against a real container and works; it is not wired into the tool as an adapter yet
+- [ ] **Hardware security module and cloud key reader** — real PKCS#11 metadata has been captured from a SoftHSM2 token (key labels, sizes, mechanisms — never key bytes); the reader itself is not built yet
+- [ ] **Compiled binary scanning** — YARA rules for AES/SHA-256 and a `readelf` dependency check have been proven against a real binary from the test enterprise; the adapter that runs them is not built yet
+- [ ] **Cross-surface relationships** — connecting "this key in the source code" to "this key on the wire" as a labelled, human-asserted link rather than an assumed identity
 - [ ] **Signed export** — the report is not signed yet, so it proves nothing about who wrote it
 - [ ] **Accuracy scoring** — measure and publish our own error rates on a test environment
 - [ ] **Packaging** — one-command install, offline, no internet access required
-- [ ] **Apache-2.0 licence file**
 - [ ] **Rename repository** `ecdat` → `pramana`
 
-**Honest summary:** the thinking is built and tested, and as of 19 Sep 2026
-two of the seven sensors are real: it reads certificates off disk, and it
-connects to a live endpoint and records what was actually negotiated. Those
-feed the ledger directly. The remaining five sensors — config files,
-containers, packages, hardware modules and compiled binaries — are not built.
-Nothing here has been run against a production network.
+**Honest summary:** the thinking is built and tested, and as of 20 Sep 2026
+four of the seven sensors are real and wired in: certificates, a live TLS
+probe, the config-file resolver, and the package/dependency scanner. Three
+more — container images, hardware/cloud keys, and compiled binaries — have
+been proven against real material from the test enterprise (a real scan, a
+real token, a real binary) but the adapter code that would make them run as
+part of a normal scan is not written yet. Nothing here has been run against a
+production network.
 
 ---
 
@@ -278,8 +284,7 @@ it knows.
 
 ## Licence
 
-Apache-2.0 intended. **The licence file is not in the repository yet** — until
-it is, no open-source licence has actually been granted. It is on the checklist.
+Apache-2.0. See [`LICENSE`](LICENSE).
 
 ## For developers
 
@@ -405,8 +410,7 @@ it knows.
 
 ## Licence
 
-Apache-2.0 intended. **The licence file is not in the repository yet** — until
-it is, no open-source licence has actually been granted. It is on the checklist.
+Apache-2.0. See [`LICENSE`](LICENSE).
 
 ## For developers
 

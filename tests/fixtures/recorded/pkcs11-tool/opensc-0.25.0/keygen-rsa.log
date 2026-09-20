@@ -1,0 +1,12 @@
+Using slot 0 with a present token (0x2dfdad71)
+Key pair generated:
+Private Key Object; RSA
+  label:      pramana-rsa-sign
+  ID:         01
+  Usage:      decrypt, sign, signRecover, unwrap
+  Access:     sensitive, always sensitive, never extractable, local
+Public Key Object; RSA 2048 bits
+  label:      pramana-rsa-sign
+  ID:         01
+  Usage:      encrypt, verify, verifyRecover, wrap
+  Access:     local

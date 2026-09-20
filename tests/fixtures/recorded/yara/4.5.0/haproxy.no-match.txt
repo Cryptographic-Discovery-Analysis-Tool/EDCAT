@@ -1,0 +1,3 @@
+(exit code 1, no stdout — yara reports nothing when no rule matches)
+$ yara -w rules/yara/crypto-constants.yar haproxy ; echo "exit=$?"
+exit=1

@@ -1,0 +1,12 @@
+Available slots:
+Slot 0 (0x2dfdad71): SoftHSM slot ID 0x2dfdad71
+  token label        : pramana-fixture-token
+  token manufacturer : SoftHSM project
+  token model        : SoftHSM v2
+  token flags        : login required, rng, token initialized, PIN initialized, other flags=0x20
+  hardware version   : 2.6
+  firmware version   : 2.6
+  serial num         : 531673ac2dfdad71
+  pin min/max        : 4/255
+Slot 1 (0x1): SoftHSM slot ID 0x1
+  token state:   uninitialized

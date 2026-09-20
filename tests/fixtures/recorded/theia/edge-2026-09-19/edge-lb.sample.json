@@ -1,0 +1,181 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:b21a4ffe-ed73-428f-aca1-d6716dcacb88",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-09-19T19:55:34Z",
+    "tools": {
+      "services": [
+        {
+          "provider": {
+            "name": "IBM"
+          },
+          "name": "cbomkit-theia",
+          "version": "edge",
+          "services": [
+            {
+              "name": "Certificate File Plugin"
+            },
+            {
+              "name": "Secret Detection Plugin"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "8a214649-05e5-49a9-8895-c244bab318ab",
+      "type": "cryptographic-asset",
+      "name": "ECDSA",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "/etc/ssl/cert.pem"
+          }
+        ]
+      },
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "pke",
+          "cryptoFunctions": [
+            "sign"
+          ]
+        }
+      }
+    },
+    {
+      "bom-ref": "ada79834-347a-4ed3-bf7f-a59260d2bc22",
+      "type": "cryptographic-asset",
+      "name": "SHA384",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "/etc/ssl/cert.pem"
+          }
+        ]
+      },
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "hash",
+          "parameterSetIdentifier": "384",
+          "cryptoFunctions": [
+            "digest"
+          ]
+        }
+      }
+    },
+    {
+      "bom-ref": "f2a366c6-5408-4aa8-8ce1-2a276e18087b",
+      "type": "cryptographic-asset",
+      "name": "ECDSA-SHA384",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "/etc/ssl/cert.pem"
+          }
+        ]
+      },
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "signature",
+          "parameterSetIdentifier": "384",
+          "cryptoFunctions": [
+            "sign"
+          ]
+        },
+        "oid": "1.2.840.10045.4.3.3"
+      }
+    },
+    {
+      "bom-ref": "6f8ed336-0738-4dfe-a8e4-9410c48b6a11",
+      "type": "cryptographic-asset",
+      "name": "ECDSA",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "/etc/ssl/cert.pem"
+          }
+        ]
+      },
+      "cryptoProperties": {
+        "assetType": "algorithm",
+        "algorithmProperties": {
+          "primitive": "pke",
+          "executionEnvironment": "unknown",
+          "implementationPlatform": "unknown",
+          "certificationLevel": [
+            "unknown"
+          ],
+          "cryptoFunctions": [
+            "encapsulate",
+            "decapsulate"
+          ]
+        },
+        "oid": "1.2.840.10045.2.1"
+      }
+    },
+    {
+      "bom-ref": "6561b8ef-08b0-4d57-ab8a-68514cbff0c8",
+      "type": "cryptographic-asset",
+      "name": "ECDSA",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "/etc/ssl/cert.pem"
+          }
+        ]
+      },
+      "cryptoProperties": {
+        "assetType": "related-crypto-material",
+        "relatedCryptoMaterialProperties": {
+          "type": "public-key",
+          "algorithmRef": "6f8ed336-0738-4dfe-a8e4-9410c48b6a11",
+          "value": "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEzZvVn4CDCuwJSvMWSj5cz3es3mcFDR0HttwW+1qLFNvicWDEukWVEYmO6gbf9yoWHKS5xcUy4APgHoIYOIvXRdgKam7mAHf7AlF9ItgKbppbd9/w+kHsOdx1ymgHDB/q",
+          "format": "PEM"
+        },
+        "oid": "1.2.840.10045.2.1"
+      }
+    },
+    {
+      "bom-ref": "f29d6304-3a87-4e5e-b64f-a5f3ceebb32e",
+      "type": "cryptographic-asset",
+      "name": "ISRG Root X2",
+      "evidence": {
+        "occurrences": [
+          {
+            "location": "/etc/ssl/cert.pem"
+          }
+        ]
+      },
+      "cryptoProperties": {
+        "assetType": "certificate",
+        "certificateProperties": {
+          "subjectName": "ISRG Root X2",
+          "issuerName": "ISRG Root X2",
+          "notValidBefore": "2020-09-04T00:00:00Z",
+          "notValidAfter": "2040-09-17T16:00:00Z",
+          "signatureAlgorithmRef": "f2a366c6-5408-4aa8-8ce1-2a276e18087b",
+          "subjectPublicKeyRef": "6561b8ef-08b0-4d57-ab8a-68514cbff0c8",
+          "certificateFormat": "X.509",
+          "certificateExtension": ".pem"
+        }
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "f2a366c6-5408-4aa8-8ce1-2a276e18087b",
+      "dependsOn": [
+        "8a214649-05e5-49a9-8895-c244bab318ab",
+        "ada79834-347a-4ed3-bf7f-a59260d2bc22"
+      ]
+    }
+  ]
+}

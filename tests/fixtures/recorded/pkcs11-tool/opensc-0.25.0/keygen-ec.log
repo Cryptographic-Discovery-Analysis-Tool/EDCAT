@@ -1,0 +1,14 @@
+Using slot 0 with a present token (0x2dfdad71)
+Key pair generated:
+Private Key Object; EC
+  label:      pramana-ec-p256
+  ID:         02
+  Usage:      decrypt, sign, signRecover, unwrap, derive
+  Access:     sensitive, always sensitive, never extractable, local
+Public Key Object; EC  EC_POINT 256 bits
+  EC_POINT:   0441040bd9ce4ceee2fa822b57ab4f0a60f8a6b7a75e357eb6be739a494c786e71a3d9f05956c7e3554aeb5e61f8e357d01c9c9067284a202e4ae0a1288341267e07b1
+  EC_PARAMS:  06082a8648ce3d030107 (OID 1.2.840.10045.3.1.7)
+  label:      pramana-ec-p256
+  ID:         02
+  Usage:      encrypt, verify, verifyRecover, wrap, derive
+  Access:     local

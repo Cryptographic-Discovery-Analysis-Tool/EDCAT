@@ -176,8 +176,13 @@ reader (OQ-2 default — revisit only after P9), Ghidra/deep RE.
 | P0 — unblock | **done** | `data/base_confidence.yaml` (OI-004 closed as re-scoped, ADR-002), `rules/semgrep/crypto-inventory-java.yaml`, `adapters/base.py` (ADR-003, DEV-001). 94 tests. |
 | P1 — source adapter | **done** | `adapters/source/semgrep.py`; 26 ground-truth tests; fixtures recorded under `tests/fixtures/recorded/semgrep/1.99.0/ecdat-rules/`. 120 tests. |
 | P2 — store + score wiring | **done (in-memory)** | `cli.py` emits a run document; `harness/eval/score_run.py` scores it. First numbers in `docs/experiments.md`. A persistent store is not yet built — not needed for a number, and Lock §5 row 9 leaves the table layout open. |
-| P3 — config adapter (CFG-001) | next | `model/configuration.py` already exists; CFG-R1 already validated the answer key with 7 real JVM launches. |
-| P4–P8 | not started | — |
+| P3 — config adapter (CFG-001) | **done** | `adapters/config/{resolver,spring,adapter}.py`; 26 tests (17 resolver-level + 9 adapter-level) covering states A–H; resolved value is never KNOWN. |
+| P4 — certs + TLS | **done** | see "Ledger phases 1–8" table below — recorded under that numbering. |
+| P5 — packages (Trivy) | **done** | `adapters/packages/{parser,adapter}.py`; built against the real recorded `trivy rootfs --list-all-pkgs` fixtures (`tests/fixtures/recorded/trivy/0.74.0/`); emits presence only, no purpose/function/usage field. |
+| P4b — images (cbomkit-theia) | fixtures recorded, adapter not built | `ghcr.io/ibm/cbomkit-theia:latest` (digest `sha256:e156d5ee...`) run live against the real Tier A `edge-lb` image, producing a valid CycloneDX 1.6 CBOM with real `cryptographic-asset` components (ECDSA/SHA384 from `/etc/ssl/cert.pem`) — see `tests/fixtures/recorded/theia/` once committed. The `payment-gateway` (JVM) image hit a real tool limitation (`max allowable directory traversal depth reached` — a symlink cycle inside the bundled JRE's `jmods`), recorded as a genuine finding, not worked around. The CBOM **importer** side (`export/cyclonedx.py::import_cbom`) already exists from phase 6 and can already ingest this exact output; the **wrapper adapter** that shells out to the tool and feeds its output through that importer is not written yet. |
+| P6 — correlation | **partial, done for its defined scope** | `correlation/{merge,gate}.py`; within-surface merge (canonical key `(parameters, scope_anchor)` — see DEV-007 for why `algorithm_family` is not in the strict key) and the forbidden-edge gate are built and tested (9 tests). Cross-surface relationship **generation** (the declared/artifact_asserted edges) needs topology/context input not yet wired anywhere and is explicitly out of scope for what was built — see `correlation/merge.py`'s module docstring. Filling harness `ground-truth/visibility.expected.yaml` is separate harness-side work, still not started. |
+| P11 — HSM/KMS | fixtures recorded, adapter not built | Real SoftHSM2 2.6.1 token, RSA-2048 + EC P-256 key pairs generated on-token via `pkcs11-tool` (OpenSC 0.25.0), full object/mechanism metadata captured with both private keys confirmed `never extractable` — see `tests/fixtures/recorded/pkcs11-tool/opensc-0.25.0/`. AWS KMS reader not attempted (no account/credentials available; needs a real `describe-key`-style export, not a documentation-only replica, per CLAUDE.md's fixtures-only-from-recordings rule). |
+| P12 — binaries | fixtures recorded, adapter not built | Own YARA rules (`rules/yara/crypto-constants.yar`, AES S-box + SHA-256 H0, both public FIPS constants) run against two real binaries copied out of the live Tier A `edge-lb` container: `haproxy` (no match — it only dynamically links crypto, confirmed via `readelf -d` `NEEDED`) and `libcrypto.so.3` (real positive AES match, 4 offsets). See `tests/fixtures/recorded/yara/4.5.0/` and `tests/fixtures/recorded/readelf/`. RSA/ECDSA have no fixed constant table and are an explicit, documented capability gap, not silently skipped. |
 
 **Measured so far** (source surface, Tier A): false-certainty **0/8**, source
 recall **4/4**, under-claiming **0/2**, all-KNOWN control **8/8**. Recall is per
@@ -199,7 +204,12 @@ ends already exist and are tested.
 `docs/architecture/Pramana_Ledger_Spec.md` §7.2 introduces a second phase
 numbering for the exposure ledger, running 1–8 alongside the P0–P12 sensor
 phases above. CLAUDE.md says this file is the only phase numbering, so the
-ledger phases are recorded here rather than left to float in another document:
+ledger phases are recorded here rather than left to float in another document.
+
+The master planning document behind both numberings — ratings, the full
+frozen §5 spec, the deterministic §6 test set, and the "this week" ordering —
+is vendored at `docs/PRAMANA_FINAL_2_Implementation_Plan_and_Rating.md`. This
+table is the live status; that document is a dated snapshot (18 Sep 2026).
 
 | Phase | Deliverable | State (2026-09-19) |
 |---|---|---|
