@@ -1,4 +1,4 @@
-"""The CLI wiring (cli.py) for all eight adapters.
+"""The CLI wiring (cli.py) for all nine adapters.
 
 Every test here drives `main()` the way a real invocation would (an argv
 list), against REAL recorded fixtures already committed under
@@ -33,6 +33,11 @@ PKCS11_SLOTS_INPUT = FIXTURES / "pkcs11-tool" / "opensc-0.25.0" / "list-slots.tx
 PKCS11_OBJECTS_INPUT = FIXTURES / "pkcs11-tool" / "opensc-0.25.0" / "list-objects-authenticated.txt"
 PKCS11_MECHANISMS_INPUT = FIXTURES / "pkcs11-tool" / "opensc-0.25.0" / "list-mechanisms.txt"
 SSLYZE_INPUT = FIXTURES / "sslyze" / "6.2.0" / "tier_a_edge_lb.raw.json"
+KMS_FIXTURES = FIXTURES / "aws-kms" / "localstack-3.0.2"
+KMS_LIST_KEYS_INPUT = KMS_FIXTURES / "list-keys.json"
+KMS_DESCRIBE_SYMMETRIC_INPUT = KMS_FIXTURES / "describe-key-symmetric.json"
+KMS_DESCRIBE_ECC_INPUT = KMS_FIXTURES / "describe-key-ecc.json"
+KMS_PUBLIC_KEY_ECC_INPUT = KMS_FIXTURES / "get-public-key-ecc.json"
 NEGOTIATED_INPUT = FIXTURES / "openssl" / "3.5.8" / "tier_a_edge_lb.negotiated.txt"
 CLASSICAL_ONLY_INPUT = FIXTURES / "openssl" / "3.5.8" / "tier_a_edge_lb.classical_only.txt"
 
@@ -56,7 +61,7 @@ def test_every_declared_adapter_has_a_cli_builder():
     reach. If a ninth adapter is ever added without a BUILDERS entry, this
     fails immediately instead of silently leaving it unreachable."""
     assert set(ADAPTERS) == set(BUILDERS)
-    assert len(ADAPTERS) == 8
+    assert len(ADAPTERS) == 9
 
 
 # --- adapters that read a local path directly ----------------------------------
@@ -188,6 +193,34 @@ def test_hsm_replay_via_cli(tmp_path, capsys):
     assert document["adapter_id"] == "hsm-pkcs11"
     assert document["outcome"] == "completed"
     assert document["findings"]
+
+
+def test_kms_replay_via_cli(tmp_path, capsys):
+    document = _run(
+        [
+            "--adapter", "kms-aws",
+            "--kms-list-keys-input", str(KMS_LIST_KEYS_INPUT),
+            "--kms-describe-key-input", str(KMS_DESCRIBE_SYMMETRIC_INPUT),
+            "--kms-describe-key-input", str(KMS_DESCRIBE_ECC_INPUT),
+            "--kms-public-key-input", str(KMS_PUBLIC_KEY_ECC_INPUT),
+        ],
+        tmp_path / "out.json",
+        capsys,
+    )
+    assert document["adapter_id"] == "kms-aws"
+    assert document["outcome"] == "completed"
+    assert len(document["findings"]) == 2
+    ecc = next(
+        f for f in document["findings"]
+        if any(fl["field"] == "key_spec" and fl["value"] == "ECC_NIST_P256" for fl in f["fields"])
+    )
+    spki = next(fl for fl in ecc["fields"] if fl["field"] == "spki_sha256")
+    assert spki["value"] == "9018f0999a68c4d5a5df4c94f5a77b607f7418b6ea396018e17c828b0667893f"
+    assert spki["epistemic_state"] == "KNOWN"
+
+
+def test_kms_replay_requires_list_keys_input():
+    assert main(["scan", *COMMON, "--adapter", "kms-aws"]) == 2
 
 
 def test_tls_replay_via_cli(tmp_path, capsys):

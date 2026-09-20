@@ -193,3 +193,41 @@ the same convenience-readback way, from whatever `fields["purpose"]` ends up bei
 ordinary (non-key) merge, if a Finding happens to populate it. Cross-surface merging remains
 structurally impossible regardless of any of this, because `scope_anchor` stays in the key
 unconditionally.
+
+## DEV-011 — P11's KMS half built and recorded against LocalStack, not a real AWS account (2026-09-20)
+
+**Issue.** `docs/build-plan.md` and `docs/PRAMANA_FINAL_2_Implementation_Plan_and_Rating.md` §3
+both call for a real AWS KMS reader (`adapters/kms/`). CLAUDE.md's anti-hallucination rule
+("PARSERS are written only against tests/fixtures/recorded/") requires that fixture to be a real,
+observed API response, not documentation transcribed from memory — and no AWS account or
+credentials exist anywhere in this environment.
+
+**Evidence.** Checked directly before deciding anything: `aws` is not installed, `~/.aws/` does
+not exist, no `AWS_*` environment variable is set, on either the Windows host or the Linux build
+box (WSL). This was not assumed; it was checked and the negative result recorded here rather than
+silently working around it.
+
+**Options.** (a) Write the adapter against AWS's published API documentation only, without a
+recorded fixture — rejected outright: this is exactly the "documentation instead of a fixture"
+shortcut CLAUDE.md's anti-hallucination rules exist to forbid, and it is indistinguishable from
+guessing the moment AWS's own JSON shape differs from the docs in some undocumented way (as it
+already does for at least one field here — see below). (b) Skip the KMS half of P11 entirely,
+as it had been until this session — a defensible, already-filed position, but the user explicitly
+asked for a real credential test rather than continuing to skip it. (c) Provision LocalStack (a
+real, running open-source implementation of the AWS API surface) in the Linux build box, and hit
+it with the real, unmodified `aws` CLI — chosen, with the user's explicit sign-off after being
+asked directly (three options were put to them: provide real credentials, use LocalStack, or
+leave it skipped).
+
+**Impact.** Every fixture under `tests/fixtures/recorded/aws-kms/localstack-3.0.2/` is a real
+HTTP response from a real running service, not invented — but it is not a genuine AWS account,
+and that distinction is stated in that directory's own README, in
+`adapters/kms/adapter.py`'s module docstring, and in `docs/build-plan.md`'s progress table, every
+place the fact matters. `adapters/kms/adapter.py`'s live code path (`build_*_argv`,
+`live_kms_runner`) is the real, unmodified `aws kms` CLI invocation shape; LocalStack is reached
+only via the `--endpoint-url` option a real account run simply omits, so nothing about the
+adapter's own code is LocalStack-specific. One genuine, measured finding came out of using a real
+implementation rather than documentation: LocalStack's `latest` image tag now refuses to start at
+all without a paid auth token (`License activation failed`, exit 55) — recorded in the fixture
+README as a fact about the image at time of recording, and `:3.0` used instead as the last tag
+confirmed to run the free/community KMS emulation.

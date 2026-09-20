@@ -1,0 +1,20 @@
+{
+    "KeyMetadata": {
+        "AWSAccountId": "000000000000",
+        "KeyId": "dd316ada-96cf-4078-93da-53ab2473536b",
+        "Arn": "arn:aws:kms:us-east-1:000000000000:key/dd316ada-96cf-4078-93da-53ab2473536b",
+        "CreationDate": 1789876533.172461,
+        "Enabled": true,
+        "Description": "pramana-fixture-ecc-signing-key",
+        "KeyUsage": "SIGN_VERIFY",
+        "KeyState": "Enabled",
+        "Origin": "AWS_KMS",
+        "KeyManager": "CUSTOMER",
+        "CustomerMasterKeySpec": "ECC_NIST_P256",
+        "KeySpec": "ECC_NIST_P256",
+        "SigningAlgorithms": [
+            "ECDSA_SHA_256"
+        ],
+        "MultiRegion": false
+    }
+}

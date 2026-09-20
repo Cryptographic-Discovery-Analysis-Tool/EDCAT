@@ -1,0 +1,10 @@
+{
+    "Aliases": [
+        {
+            "AliasName": "alias/pramana-fixture-symmetric",
+            "AliasArn": "arn:aws:kms:us-east-1:000000000000:alias/pramana-fixture-symmetric",
+            "TargetKeyId": "c5e5d28f-fa8a-4b1a-859a-6e7c842352ac",
+            "CreationDate": 1789876534.572376
+        }
+    ]
+}
