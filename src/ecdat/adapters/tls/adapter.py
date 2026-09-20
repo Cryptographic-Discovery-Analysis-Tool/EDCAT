@@ -250,12 +250,20 @@ class TlsEndpointAdapter(Adapter):
             for command, suites in sslyze.accepted_cipher_suites.items():
                 fields[f"accepted_{command}"] = self._known(suites, sslyze_evidence)
             fields["supported_curves"] = self._known(sslyze.supported_curves, sslyze_evidence)
-            if sslyze.leaf_fingerprint_sha256:
-                fields["leaf_fingerprint_sha256"] = self._known(
-                    sslyze.leaf_fingerprint_sha256, sslyze_evidence
-                )
+            if sslyze.leaf_subject:
                 fields["leaf_subject"] = self._known(sslyze.leaf_subject, sslyze_evidence)
                 fields["chain_subjects"] = self._known(sslyze.chain_subjects, sslyze_evidence)
+                # Named identically to certs-x509's own fields (not
+                # "leaf_der_sha256") so correlation/engine.py's cross-surface
+                # identity match -- which looks for a field literally named
+                # der_sha256/spki_sha256 -- picks this Finding up with no
+                # engine change: same field name, same canonicalisation
+                # pipeline (parser.py), genuinely the same claim.
+                if sslyze.leaf_der_sha256:
+                    fields["der_sha256"] = self._known(sslyze.leaf_der_sha256, sslyze_evidence)
+                    fields["spki_sha256"] = self._known(sslyze.leaf_spki_sha256, sslyze_evidence)
+                else:
+                    fields["der_sha256"] = self._unknown()
 
         detail = (
             f"{target.target_id}: probed {probe.requested_host}:{probe.port} "

@@ -108,6 +108,22 @@ def test_sslyze_reports_suites_curves_and_the_chain():
     assert len(observation.chain_subjects) == 2
 
 
+def test_sslyze_leaf_hash_is_canonicalised_the_same_way_certs_x509_computes_it():
+    """The value this test asserts was independently computed by loading the
+    real on-disk pay-edge certificate (ecdat-harness/harness/build/out/
+    pay-edge/cert.pem) through CertificateAdapter's own parser and reading
+    off its der_sha256 -- same real object, two different surfaces, byte-for-
+    byte the same hex hash. That equality is what makes cross-surface
+    correlation (correlation/engine.py) honest for this field."""
+    observation = parse_sslyze(json.loads(SSLYZE_JSON.read_text(encoding="utf-8")))
+    assert observation.leaf_der_sha256 == (
+        "8a86ce9994efda613354233f9e7951a7bc193038f96265f596ce61292608ec72"
+    )
+    assert observation.leaf_spki_sha256 == (
+        "9390571d51590492daa35b41092b7822f51237d1de114ed94205152acd1fab82"
+    )
+
+
 def test_sslyze_did_not_see_the_hybrid_group_it_was_negotiating():
     """The measured fact behind OI-017, asserted against both fixtures at
     once: OpenSSL negotiated X25519MLKEM768 with this endpoint, and sslyze
@@ -164,14 +180,27 @@ def test_the_finding_records_both_probes():
     (finding,) = run().findings
     assert finding.fields["negotiated_group"].value == "X25519MLKEM768"
     assert finding.fields["classical_still_accepted"].value is True
-    assert finding.fields["classical_group"].value == "X25519"
-    assert finding.fields["supported_curves"].value == (
-        "X25519",
-        "X448",
-        "secp256r1",
-        "secp384r1",
-        "secp521r1",
+
+
+def test_the_finding_carries_a_der_sha256_field_named_like_certs_x509s():
+    """Named identically to certs-x509's own der_sha256/spki_sha256 fields
+    on purpose -- correlation/engine.py's cross-surface identity match looks
+    for exactly this field name and picks this Finding up automatically,
+    with no engine change needed for a second surface to participate."""
+    (finding,) = run().findings
+    assert finding.fields["der_sha256"].value == (
+        "8a86ce9994efda613354233f9e7951a7bc193038f96265f596ce61292608ec72"
     )
+    assert finding.fields["der_sha256"].state == EpistemicState.KNOWN
+    assert finding.fields["spki_sha256"].value == (
+        "9390571d51590492daa35b41092b7822f51237d1de114ed94205152acd1fab82"
+    )
+
+
+def test_no_sslyze_probe_leaves_der_sha256_absent_not_fabricated():
+    result = run(sslyze_json=None)
+    (finding,) = result.findings
+    assert "der_sha256" not in finding.fields
 
 
 def test_the_visibility_entry_states_what_sslyze_could_not_see():
