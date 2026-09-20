@@ -211,7 +211,7 @@ pip install -e ".[dev]"
 python -m pytest -q
 ```
 
-That runs 395 tests, including all 18 worked examples from the frozen
+That runs 413 tests, including all 18 worked examples from the frozen
 specification. The calculation engine is real and fully tested. **The part that
 goes and looks at your actual systems is not finished yet** — see the checklist.
 
@@ -252,26 +252,31 @@ goes and looks at your actual systems is not finished yet** — see the checklis
 - [x] **Hardware security module reader** — reads a PKCS#11 token's own inventory (key labels, sizes, algorithms, and the token's own confirmation that a private key can never be exported) without ever touching key material. Tested against a real SoftHSM2 token. Cloud key-management-service reading (AWS KMS etc.) is not built — see below
 - [x] **Compiled binary scanning** — matches published, public AES/SHA-256 constants inside a binary, and separately checks what crypto libraries it dynamically links against, and is careful never to blend those two into one claim (a program that merely *links against* OpenSSL is not the same fact as one with AES's math baked directly into it). Tested against a real binary from the test enterprise. RSA and elliptic-curve keys have no fixed pattern like this to search for, and the tool says so plainly every time rather than staying quiet about it
 - [x] **Apache-2.0 licence file**
+- [x] **One command line for every reader** — `ecdat scan --adapter <name> ...` now reaches all eight readers, each either given a recorded file to replay (for tests and reruns) or `--live` to actually run the real tool. Four of the live paths — the package scanner, the image scanner, the hardware-module reader and the binary scanner — have each been run for real against the test enterprise from this command line, not just against a recorded file: the image scanner found the same 5082 real components a direct run finds, the hardware-module reader read a real token, and the binary and package scanners each found real matches. Running it live caught and fixed a real bug (the package scanner's live invocation was quietly asking for output in the wrong format)
 
 ### Not done yet
 
 - [ ] **Java keystore formats** — JKS and BCFKS are not read yet; they are reported as skipped, never as absent
 - [ ] **Cloud key-management-service reader** — AWS KMS and similar; needs a real account to test against honestly, which this environment does not have
 - [ ] **Cross-surface relationships** — connecting "this key in the source code" to "this key on the wire" as a labelled, human-asserted link rather than an assumed identity
-- [ ] **Wiring every reader into one command** — each reader above works and is tested on its own; running all of them over one target from a single command line is not built yet
+- [ ] **A live connection probe from the command line** — the live TLS/connection prober exists and has been proven (see above), but reaching it from `ecdat scan --live` needs two coordinated tools from a declared vantage point, which is intentionally kept as its own separate path (`tools/prober/`) rather than folded into this one
+- [ ] **Correlating results across readers automatically** — each reader still reports on its own; nothing yet joins "the certificate found on disk" with "the certificate seen on the wire" into one picture
 - [ ] **Signed export** — the report is not signed yet, so it proves nothing about who wrote it
 - [ ] **Accuracy scoring** — measure and publish our own error rates on a test environment
 - [ ] **Packaging** — one-command install, offline, no internet access required
 - [ ] **Rename repository** `ecdat` → `pramana`
 
 **Honest summary:** the thinking is built and tested, and as of 20 Sep 2026
-all seven planned readers exist and are individually tested against real
-material — certificates, a live TLS probe, the config-file resolver, the
-package/dependency scanner, the container-image scanner, the hardware-module
-reader, and the compiled-binary scanner. What is not yet built is the single
-command that runs all seven over one target and correlates the results —
-today each one is proven on its own, not yet as one working pipeline. Nothing
-here has been run against a production network.
+all eight planned readers exist, are individually tested against real
+material, and are reachable from one command line. Six of them have been
+proven against a real, live tool run from that command line (certificates
+and the config resolver read real files directly and always have been
+"live" in that sense; packages, images, the hardware module and the binary
+scanner were each just run for real and produced real results). The live
+TLS probe exists and has its own proven path, just not yet through this
+same command. What's still missing is automatic correlation across readers
+— today each one reports on its own, nothing joins their answers together
+yet. Nothing here has been run against a production network.
 
 ---
 
@@ -360,6 +365,33 @@ for f in result.findings:
 ```
 
 Add `keystore_password=b'...'` to read a `.p12` keystore.
+
+### 4. Scan something from the command line
+
+Every reader above (and the four others — packages, container images, hardware
+modules, compiled binaries) is reachable from one command, `ecdat scan`, without
+writing any Python. Point it at a folder of certificates:
+
+```bash
+python -m ecdat.cli scan \
+  --adapter certs-x509 \
+  --input PUT_A_FOLDER_PATH_HERE \
+  --target-id my-scan \
+  --confidence 0.95 \
+  --confidence-justification "Read directly from an artefact; no cited confidence table exists yet."
+```
+
+Prints the same kind of run document the dashboard and the scorer both read.
+Add `--out result.json` to save it instead of printing it.
+
+The four readers that wrap a real external tool (`packages-trivy`,
+`images-cbomkit-theia`, `hsm-pkcs11`, `binary-yara-readelf`) can either replay
+a file you already recorded, or add `--live` to actually run trivy / docker /
+pkcs11-tool / yara+readelf for real — that needs the Linux build box below.
+`ecdat scan --adapter binary-yara-readelf --help` won't exist (this is a
+single shared `scan` command, not one per adapter) but running `ecdat scan
+--adapter <name>` with a missing required flag prints exactly what that
+adapter needs.
 
 ---
 

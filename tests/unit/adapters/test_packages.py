@@ -122,6 +122,13 @@ def test_live_argv_uses_rootfs_not_fs_and_pins_skip_db_update():
     assert "--skip-db-update" in argv
     assert "--list-all-pkgs" in argv
     assert argv[0] == "trivy"
+
+    format_index = argv.index("--format")
+    assert argv[format_index + 1] == "json", (
+        "trivy's default output is a human-readable table even when stdout is not a TTY "
+        "(confirmed live 2026-09-20) -- without --format json this adapter's JSON parse fails "
+        "against a real invocation"
+    )
     # timeout is passed as a single "<n>s" token, not two separate args
     timeout_index = argv.index("--timeout")
     assert argv[timeout_index + 1] == "120s"

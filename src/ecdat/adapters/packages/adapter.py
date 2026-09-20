@@ -114,12 +114,22 @@ def build_trivy_argv(
     `--skip-db-update` plus an offline `--cache-dir` is CLAUDE.md's pinned
     subprocess default for trivy; `--list-all-pkgs` is what makes trivy
     enumerate every package rather than only ones with known vulnerabilities
-    (P5 wants presence, not just CVE hits).
+    (P5 wants presence, not just CVE hits). `--format json` is required
+    explicitly -- trivy's default output is a human-readable table
+    regardless of whether stdout is a TTY (confirmed live 2026-09-20: a
+    real invocation without this flag produced a table and this adapter's
+    JSON parse failed on it; this was missing when the argv was first
+    written and only surfaced once `ecdat scan --live` was actually wired
+    up and run for real, not just against a fixture that happened to
+    already be JSON).
 
     A pure function so the live-invocation shape can be asserted without
     ever shelling out (see tests/unit/adapters/test_packages.py).
     """
-    argv = ["trivy", "rootfs", "--scanners", "vuln", "--list-all-pkgs", "--skip-db-update"]
+    argv = [
+        "trivy", "rootfs", "--format", "json",
+        "--scanners", "vuln", "--list-all-pkgs", "--skip-db-update",
+    ]
     if offline_db_path:
         argv += ["--cache-dir", offline_db_path]
     argv += ["--timeout", f"{timeout_seconds}s", locator]

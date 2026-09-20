@@ -10,6 +10,12 @@ dependencies = [
     # (schemas/cyclonedx-1.6.schema.json), never against a fetched one.
     # >=4.18 for the `referencing` registry API.
     "jsonschema>=4.18",
+    # certs/parser.py (PEM/DER/PKCS#12 parsing) and tls/parser.py (X.509
+    # subject/issuer reads) both import this directly; was missing from
+    # this list even though every adapter test that exercises it passes on
+    # a dev machine that happens to already have it installed some other
+    # way -- caught 2026-09-20 trying a clean install in a fresh venv.
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]
