@@ -20,12 +20,30 @@ Getting this wrong fails in the quiet direction: with sslyze alone, no
 endpoint would ever be observed refusing classical, no clock would ever stop,
 and every surface would sit at BLEEDING forever. Safe, but useless -- the tool
 could never recognise a migration that actually happened.
+
+**The leaf certificate's hash.** sslyze's own JSON carries the served leaf
+certificate as PEM (`received_certificate_chain[0].as_pem`) and a
+`fingerprint_sha256` of its own -- deliberately NOT used here: it is
+base64, not the hex `certs-x509` uses for `der_sha256`, so even a
+byte-identical certificate would fail a string-equality cross-surface match
+against a certs-x509 Finding purely on encoding, and its exact hashing
+methodology (canonicalised DER vs. as-received bytes) is not documented by
+sslyze. Instead this module feeds that same PEM through
+`ecdat.adapters.certs.parser.load_pem_or_der` -- the identical
+canonicalisation-then-hex-SHA-256 pipeline `certs-x509` uses -- so a
+`der_sha256` computed here and one computed there are directly, honestly
+comparable, which is the entire reason `correlation/engine.py` can link
+them (`IDENTITY-CERT-DER-001`). This is the served leaf, from this one
+observed handshake, from this one vantage -- not a claim about which
+certificate an endpoint "should" present.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 from typing import Any
+
+from ecdat.adapters.certs.parser import CertificateParseError, load_pem_or_der
 
 
 class TlsProbeParseError(ValueError):
@@ -112,7 +130,12 @@ class SslyzeObservation:
     supported_curves: tuple[str, ...] = ()
     rejected_curves: tuple[str, ...] = ()
     leaf_subject: str | None = None
-    leaf_fingerprint_sha256: str | None = None
+    #: Canonicalised (certs-x509-compatible) hex SHA-256 of the served leaf
+    #: certificate's DER and SubjectPublicKeyInfo. See module docstring
+    #: "The leaf certificate's hash" for why these, not sslyze's own
+    #: base64 `fingerprint_sha256`, are what this module computes.
+    leaf_der_sha256: str | None = None
+    leaf_spki_sha256: str | None = None
     chain_subjects: tuple[str, ...] = ()
     scan_commands_attempted: tuple[str, ...] = ()
 
@@ -163,7 +186,8 @@ def parse_sslyze(document: dict[str, Any]) -> SslyzeObservation:
     rejected = tuple(c["name"] for c in (curves.get("rejected_curves") or []))
 
     leaf_subject = None
-    leaf_fingerprint = None
+    leaf_der_sha256 = None
+    leaf_spki_sha256 = None
     chain_subjects: tuple[str, ...] = ()
     certificate_info = _first_result(scan_result, "certificate_info") or {}
     for deployment in certificate_info.get("certificate_deployments") or []:
@@ -172,10 +196,22 @@ def parse_sslyze(document: dict[str, Any]) -> SslyzeObservation:
             continue
         leaf = chain[0]
         leaf_subject = (leaf.get("subject") or {}).get("rfc4514_string")
-        leaf_fingerprint = leaf.get("fingerprint_sha256")
         chain_subjects = tuple(
             (c.get("subject") or {}).get("rfc4514_string", "") for c in chain
         )
+        leaf_pem = leaf.get("as_pem")
+        if leaf_pem:
+            try:
+                (parsed,) = load_pem_or_der(leaf_pem.encode("ascii"), location="tls:leaf")
+            except CertificateParseError:
+                # sslyze reported a leaf it could not itself decode cleanly
+                # into something this pipeline also parses -- recorded as
+                # genuinely unknown, never guessed at from the fingerprint
+                # field sslyze does provide (see module docstring).
+                pass
+            else:
+                leaf_der_sha256 = parsed.der_sha256
+                leaf_spki_sha256 = parsed.spki_sha256
         break
 
     return SslyzeObservation(
@@ -187,7 +223,8 @@ def parse_sslyze(document: dict[str, Any]) -> SslyzeObservation:
         supported_curves=supported,
         rejected_curves=rejected,
         leaf_subject=leaf_subject,
-        leaf_fingerprint_sha256=leaf_fingerprint,
+        leaf_der_sha256=leaf_der_sha256,
+        leaf_spki_sha256=leaf_spki_sha256,
         chain_subjects=chain_subjects,
         scan_commands_attempted=tuple(sorted(scan_result.keys())),
     )

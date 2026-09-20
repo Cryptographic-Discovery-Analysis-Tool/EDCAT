@@ -7,6 +7,7 @@ it would be from `ecdat correlate`, not just against a mocked shape.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from cryptography import x509
@@ -16,12 +17,24 @@ from cryptography.x509.oid import NameOID
 
 from ecdat.adapters.base import ScanTarget
 from ecdat.adapters.certs.adapter import CertificateAdapter
+from ecdat.adapters.tls.adapter import TlsEndpointAdapter, TlsProbeBundle
 from ecdat.correlation.engine import ForbiddenEdgeError, correlate
 from ecdat.model.epistemic import EpistemicState
 from ecdat.model.evidence import ConfidenceBasis
 from ecdat.model.relationship import EvidenceBasis, Relationship
+from ecdat.model.topology import ProbeTargetIdentity
 
 BASIS = ConfidenceBasis(source="ADAPTER_DECLARED", justification="test invocation, no cited table exists")
+
+# Real recorded material, both already committed in this repo.
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "recorded"
+SSLYZE_JSON = FIXTURES / "sslyze" / "6.2.0" / "tier_a_edge_lb.raw.json"
+# The sibling harness repo's real Tier A PKI -- the file `cert.pem` here is
+# the exact certificate the sslyze fixture above recorded live from the wire.
+HARNESS_PKI = Path(__file__).resolve().parents[4] / "ecdat-harness" / "harness" / "build" / "out"
+pytestmark_harness = pytest.mark.skipif(
+    not HARNESS_PKI.exists(), reason="sibling harness checkout not present"
+)
 
 
 def _write_cert(path, *, key=None, name="test-cert"):
@@ -177,3 +190,48 @@ def test_a_self_edge_never_slips_through_even_with_one_asset_group():
     relationships, unclaimed = _identity_relationships((asset,))
     assert relationships == ()
     assert unclaimed == ()
+
+
+# --- real cross-surface case: the same certificate, TLS wire vs. disk --------
+
+
+@pytestmark_harness
+def test_the_wire_certificate_and_the_on_disk_certificate_are_the_same_object():
+    """The case this whole extension exists for: `tls-endpoint`'s live-
+    recorded handshake (sslyze fixture, committed in this repo) presented
+    the exact certificate that sits on disk in the real Tier A PKI (sibling
+    harness checkout) as `pay-edge/cert.pem`. Two completely different
+    surfaces -- a wire capture and a filesystem read -- correlate to one
+    real-world object with no synthetic data anywhere in this test."""
+    tls_probe = TlsProbeBundle(sslyze_json=SSLYZE_JSON.read_text(encoding="utf-8"))
+    tls_adapter = TlsEndpointAdapter(
+        base_confidence=0.95, confidence_basis=BASIS, probe_runner=lambda target: tls_probe
+    )
+    tls_target = ScanTarget(
+        target_id="tier-a-edge-lb",
+        locator="172.18.0.3:8443",
+        consent=True,
+        probe=ProbeTargetIdentity(
+            requested_host="172.18.0.3", port=8443, sni_sent="pay-edge", probe_vantage="docker:payments-internal"
+        ),
+    )
+    tls_result = tls_adapter.run(tls_target)
+
+    certs_adapter = CertificateAdapter(base_confidence=0.95, confidence_basis=BASIS)
+    certs_result = certs_adapter.run(
+        ScanTarget(target_id="pay-edge-pki", locator=str(HARNESS_PKI / "pay-edge" / "cert.pem"))
+    )
+
+    report = correlate([tls_result, certs_result])
+
+    assert set(report.source_adapter_ids) == {"tls-endpoint", "certs-x509"}
+    (relationship,) = report.relationships
+    assert relationship.type == "same-object"
+    assert relationship.rule_id == "IDENTITY-CERT-DER-001"
+    assert relationship.evidence_basis == EvidenceBasis.CONTENT_IDENTITY
+    tls_asset = next(a for a in report.assets if a.scope_anchor == "tls:172.18.0.3:8443")
+    certs_asset = next(a for a in report.assets if a.scope_anchor != "tls:172.18.0.3:8443")
+    assert {relationship.source_entity, relationship.target_entity} == {
+        tls_asset.asset_id,
+        certs_asset.asset_id,
+    }
