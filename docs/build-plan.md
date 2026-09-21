@@ -308,25 +308,39 @@ false-migration-claim negative case). 496 tests pass (was 472);
 network scans of yet, so "done when" is verified against `ledger-run` over the
 fixture, not a live scan diff.
 
-### P14 — Agility evidence (narrowed from the review's proposal)
+### P14 — Agility evidence (narrowed from the review's proposal) — **done (2026-09-21)**
 
 **Falls under:** P1 (source adapter, done), P3 (config adapter, done), P4 (TLS, done).
-All three already observe what this phase names; none of them names it.
+All three already observed what this phase names; `agility/evidence.py` is what names it.
 
-The review proposed six fields. Three are adopted, one is deferred, **two are
+The review proposed six fields. Three are adopted, one stays deferred, **two are
 refused**.
 
 | Field | Verdict | Where the evidence already is |
 |---|---|---|
-| `algorithm_selection` — `HARDCODED` / `CONFIGURATION_DRIVEN` / `UNKNOWN` | adopt | The source rules already split literal from non-literal: `TokenVault`'s literal `AES/GCM/NoPadding` (PAY-003) against `KeyWrapService`'s `props.getTransformation()` resolved through the config chain (PAY-001). This is that distinction, named. |
-| `hybrid_capable` | adopt, KNOWN only when observed | The TLS adapter's `negotiated_group`. A configured cipher list is INFERRED at best, never KNOWN. |
-| `provider_pluggable` | adopt, INFERRED ceiling | JCA provider indirection is readable from source; an actual provider registration is not, so UNKNOWN is the default and INFERRED is the maximum. |
+| `algorithm_selection` — `HARDCODED` / `CONFIGURATION_DRIVEN` / `UNKNOWN` | **built** | Reads `source-semgrep`'s own literal/non-literal split: `TokenVault`'s literal `AES/GCM/NoPadding` (PAY-003, HARDCODED) against `KeyWrapService`'s `props.getTransformation()` (PAY-001, CONFIGURATION_DRIVEN). Direct relabelling of an existing observation — same state, same evidence_refs, no `derive()`. |
+| `hybrid_capable` | **built**, KNOWN only when observed | Reads the TLS adapter's own `negotiated_group`. Verified against the real fixture: `False`/absent without the openssl probe (`UNKNOWN`, not promoted from a configured cipher list), `True`/`KNOWN` with it. |
+| `provider_pluggable` | **built**, INFERRED ceiling, never KNOWN | Reads `provider_argument` (source text, KNOWN) and caps the *pluggability claim* to INFERRED — a call site that can take a provider argument does not prove a second provider actually runs. See DEV-012/OI-018: no rule_id is registered for this cap (nothing in the canonical docs names it), so it is built without `derive()` rather than citing an invented rule. |
 | `certificate_rotation` | **defer to P13** | Not a field. It needs the same certificate seen at two times, which is exactly what the run store produces. Putting it on a Finding would imply a single scan can see it. |
 | `migration_complexity` | **refuse** | It is a score. Slide 2 claims "no weights, no score, no model — lexicographic order only," and §5.10 ranks by window, not by effort. Adding this field would falsify the headline claim in exchange for a number nobody can defend. |
 | `hardcoded` as a bare boolean | **refuse** | Collapses `HARDCODED` and "we could not tell" into one value. Three states or none. |
 
+Wired into `correlation/graph.py::GraphNode.agility` (every node in the P15 evidence
+graph carries its own agility evidence) and surfaced in both `ecdat correlate
+--format graph` and the dashboard's "Evidence graph" tab. Verified live against the
+demo fixture: all three fields honestly read `UNKNOWN` there, because that fixture
+runs only `certs-x509` — no source or TLS evidence exists for it to read, and
+nothing is fabricated to fill the gap.
+
 **Done when:** every agility field carries its own epistemic state like every other
-field in the model, and `check_data_citations.py` still passes.
+field in the model — true by construction, `AgilityEvidence`'s three fields are each
+a `FieldValue` — and `check_data_citations.py` still passes.
+
+Tests: `tests/unit/agility/test_evidence.py` (12, against real `source-semgrep` and
+`tls-endpoint` fixture runs, not hand-built field dicts) plus the P15 graph tests
+extended to cover `agility`. 514 tests pass (was 502);
+`tools/ci/check_data_citations.py` still passes. Methodology recorded in DEV-012
+and OI-018.
 
 ### P15 — Evidence graph view — **done (2026-09-21)**
 

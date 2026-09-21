@@ -414,6 +414,13 @@ def create_app(
         """P15: the evidence graph view. `fixture` is always true today --
         `correlation_report` is `default_correlation_report()` unless a
         caller wires a real one in, exactly like `DEFAULT_SUBJECTS`."""
+        def agility_field(fv) -> dict[str, Any]:
+            return {
+                "value": fv.value.value if hasattr(fv.value, "value") else fv.value,
+                "state": fv.state.value,
+                "evidence_refs": list(fv.evidence_refs),
+            }
+
         evidence_graph: EvidenceGraph = build_graph(correlation_report)
         return {
             "fixture": True,
@@ -423,6 +430,11 @@ def create_app(
                     "algorithm_family": n.algorithm_family,
                     "purpose": n.purpose,
                     "scope_anchor": n.scope_anchor,
+                    "agility": {
+                        "algorithm_selection": agility_field(n.agility.algorithm_selection),
+                        "hybrid_capable": agility_field(n.agility.hybrid_capable),
+                        "provider_pluggable": agility_field(n.agility.provider_pluggable),
+                    },
                 }
                 for n in evidence_graph.nodes
             ],

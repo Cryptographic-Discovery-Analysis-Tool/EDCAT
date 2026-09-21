@@ -36,6 +36,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict
 
+from ecdat.agility.evidence import AgilityEvidence, agility_evidence_for
 from ecdat.correlation.engine import CorrelationReport
 from ecdat.model.asset import CryptoAsset
 from ecdat.model.relationship import Relationship
@@ -57,6 +58,10 @@ class GraphNode(BaseModel):
     algorithm_family: str | None
     purpose: str | None
     scope_anchor: str | None
+    #: build-plan.md P14. Computed from this same asset's `fields`, so a
+    #: node's agility evidence is never a separate lookup that could drift
+    #: out of step with what correlated it.
+    agility: AgilityEvidence
 
 
 class GraphEdge(BaseModel):
@@ -118,6 +123,7 @@ def _node(asset: CryptoAsset) -> GraphNode:
         algorithm_family=asset.algorithm_family,
         purpose=asset.purpose,
         scope_anchor=asset.scope_anchor,
+        agility=agility_evidence_for(asset.asset_id, asset.fields),
     )
 
 

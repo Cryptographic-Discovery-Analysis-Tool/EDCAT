@@ -573,6 +573,24 @@ def _correlate_document(report: CorrelationReport) -> dict[str, Any]:
     }
 
 
+def _agility_document(agility) -> dict[str, Any]:
+    """build-plan.md P14, serialised: each of the three adopted fields with
+    its own value, epistemic state and evidence_refs -- never collapsed into
+    one summary field."""
+    def field(fv) -> dict[str, Any]:
+        return {
+            "value": fv.value.value if hasattr(fv.value, "value") else fv.value,
+            "state": fv.state.value,
+            "evidence_refs": list(fv.evidence_refs),
+        }
+
+    return {
+        "algorithm_selection": field(agility.algorithm_selection),
+        "hybrid_capable": field(agility.hybrid_capable),
+        "provider_pluggable": field(agility.provider_pluggable),
+    }
+
+
 def _graph_document(graph: EvidenceGraph) -> dict[str, Any]:
     """P15's graph view, serialised. Every edge carries its `strength` field
     verbatim -- nothing here decides which edges are shown or hides the
@@ -584,6 +602,7 @@ def _graph_document(graph: EvidenceGraph) -> dict[str, Any]:
                 "algorithm_family": node.algorithm_family,
                 "purpose": node.purpose,
                 "scope_anchor": node.scope_anchor,
+                "agility": _agility_document(node.agility),
             }
             for node in graph.nodes
         ],

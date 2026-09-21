@@ -602,3 +602,13 @@ thing the whole ledger exists to track.
 **Not attempted:** whether a later sslyze/nassl adds ML-KEM. When one does,
 the second probe can be dropped and `NASSL_KEY_TYPES` in
 `adapters/tls/parser.py` re-recorded from the new library.
+
+## OI-018 — `provider_pluggable`'s downgrade has no registered rule_id (2026-09-21)
+
+Filed alongside DEV-012. `agility/evidence.py::provider_pluggable_for` caps `KNOWN`
+(`provider_argument`, observed in source) down to `INFERRED` by construction, because a call site
+that accepts a provider argument does not prove a second provider is actually registered at
+runtime — but no Lock or harness §14–16 section names this rule, so it cannot be registered in
+`rules/registry.py` per CLAUDE.md's anti-hallucination rule ("do not add a rule_id from memory").
+**Not attempted:** searching for a future spec revision that might name it. When one does,
+register the rule_id and route the field through `model.field_value.derive()`.

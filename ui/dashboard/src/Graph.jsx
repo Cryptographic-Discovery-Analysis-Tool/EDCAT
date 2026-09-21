@@ -8,6 +8,35 @@ import React from 'react'
 // blank space, so a reader sees what this engine refuses to claim, not just
 // what it does.
 
+const AGILITY_LABEL = {
+  algorithm_selection: 'Algorithm selection',
+  hybrid_capable: 'Hybrid capable',
+  provider_pluggable: 'Provider pluggable',
+}
+
+function AgilityField({ name, field }) {
+  const shown = field.value === null || field.value === undefined ? field.state : String(field.value)
+  return (
+    <span className={`agility-field agility-${field.state.toLowerCase()}`} title={`${name}: ${field.state}`}>
+      {AGILITY_LABEL[name]}: {shown}
+    </span>
+  )
+}
+
+function Node({ node }) {
+  return (
+    <div className="graph-node">
+      <span className="mono small">{node.asset_id}</span>
+      {node.algorithm_family && <span className="small faint"> · {node.algorithm_family}</span>}
+      <div className="agility-row">
+        {Object.entries(node.agility).map(([name, field]) => (
+          <AgilityField key={name} name={name} field={field} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function Edge({ edge }) {
   const claimed = edge.strength === 'claimed'
   return (
@@ -49,7 +78,12 @@ export default function Graph({ data }) {
         nothing is drawn without one.
       </p>
 
-      <h4>Claimed — same-object ({claimed.length})</h4>
+      <h4>Assets — agility evidence ({data.nodes.length})</h4>
+      {data.nodes.map((n) => (
+        <Node key={n.asset_id} node={n} />
+      ))}
+
+      <h4 style={{ marginTop: 20 }}>Claimed — same-object ({claimed.length})</h4>
       {claimed.length === 0 ? (
         <p className="small faint">No certificate matched by DER hash in this view.</p>
       ) : (
