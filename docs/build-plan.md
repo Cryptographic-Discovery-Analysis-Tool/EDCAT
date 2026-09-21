@@ -262,31 +262,51 @@ no two runs can be compared. That single gap is also the whole of the review's
 separate "drift" proposal. They are one phase, not two, and the expensive half of
 both is already done.
 
-### P13 — Run store and run-to-run diff
+### P13 — Run store and run-to-run diff — **done (2026-09-21), scoped**
 
 **Falls under:** P2 (*store + score wiring*, recorded above as "done (in-memory)" —
 this is the persistent half it deferred), ledger phase 4 (*exposure ledger*, built),
 and §5.7's migration timeline (built).
 
-**Missing:** run identity, persistence, and a diff. Nothing else.
+Built: `store/repository.py` (`Run`, `RunStore` protocol, `JsonlRunStore`),
+`store/diff.py` (`diff_runs`), and three CLI commands —
+`ecdat ledger-run --subjects <file> --scenario <id> --target-id <id> --store-dir <dir>`
+(evaluates a ledger and saves the result as a `Run`, the same `evaluate_run` the
+API calls), `ecdat runs --store-dir <dir>` (list), and
+`ecdat diff --store-dir <dir> --from <run> --to <run>`.
 
-Deliverables:
+**Scoping decision, stated rather than silently narrowed:** the deck promises
+PostgreSQL (JSONB). `RunStore` is the interface Lock §5 row 9 leaves open ("the
+table layout open; a run is an append-only document either way"), and what ships
+today behind it is `JsonlRunStore` — one JSON document per run, one file per run,
+under a directory. It satisfies "append-only document" literally, needs no service
+to stand up, and works offline and in CI. A `PostgresRunStore` implementing the
+same `RunStore` protocol is the natural next adapter; nothing above the interface
+changes when it lands. The deck's platform row should say persistence and
+run-to-run diff are built, and that the backing store today is file-based pending
+a Postgres adapter — not claim Postgres itself is running.
 
-- `store/` — a real repository behind the interface P2 left open. Lock §5 row 9
-  leaves the table layout open; a run is an append-only document either way.
-- `ecdat runs` (list) and `ecdat diff --from <run> --to <run>`.
-- Diff classes: `NEW` · `CHANGED` · `REMOVED` · `MIGRATED` · `REGRESSED` · `UNCHANGED`.
+Diff classes: `NEW` · `CHANGED` · `REMOVED` · `MIGRATED` · `REGRESSED` · `UNCHANGED`,
+matched by `usage_context_id`. `MIGRATED` and `REGRESSED` introduce **no new
+judgement** — `diff.py::_currently_stopped` builds `confidentiality_ledger.py`'s own
+`_Timeline` from each record's stored migrations and compares `currently_stopped`
+across the two runs; a row becomes `MIGRATED` only on a KNOWN migration observation
+with `classical_still_accepted` false, exactly the rule §5.7 already enforces
+within one run, now compared across two. Authentication rows never classify as
+MIGRATED/REGRESSED (the module docstring's own distinction: nothing signed is
+"lost"). Verified end to end against `tests/fixtures/ledger/subjects.json`: `ecdat
+ledger-run` under `Z_aggressive` then under `Z_central`, `ecdat diff` between them,
+correctly finds the one row that moves BLEEDING → SAVABLE — the same row the
+dashboard shows as "flips at Central" (P19).
 
-`MIGRATED` and `REGRESSED` introduce **no new judgement**. They are
-`_Timeline.first_stop` and `_Timeline.reopened` persisted across two runs instead of
-computed inside one. The evidence bar is therefore already set and already tested: a
-row becomes `MIGRATED` only on a KNOWN migration observation with
-`classical_still_accepted` false. A configuration file that claims an upgrade moves
-nothing — the same rule §5.7 already enforces, now visible across time.
+Tests: `tests/unit/store/test_repository.py`, `tests/unit/store/test_diff.py`,
+`tests/unit/test_cli_ledger_run.py` (drives `main()` with real argv, including the
+false-migration-claim negative case). 496 tests pass (was 472);
+`tools/ci/check_data_citations.py` still passes.
 
-**Done when:** two real scans of the same target, taken before and after a real
-change to the Tier A endpoint, produce a diff in which at least one row moves, and
-the move is justified by an observation rather than a declaration.
+**Not done:** `PostgresRunStore`; there is no live Tier A target to take two real
+network scans of yet, so "done when" is verified against `ledger-run` over the
+fixture, not a live scan diff.
 
 ### P14 — Agility evidence (narrowed from the review's proposal)
 
@@ -356,7 +376,7 @@ One of the five below is genuinely a deletion. Four are phases.
 
 | Deck promise | Where | Verified state, 2026-09-20 | Verdict |
 |---|---|---|---|
-| "PostgreSQL (JSONB evidence + snapshots)" | S3 platform | `store/__init__.py` is 0 bytes; no `postgres`/`psycopg`/`sqlalchemy` in `src/` or `pyproject.toml` | **Keep — P13 builds it.** Slide 5's "snapshots show new exposure, closed windows and certificate change" is the same requirement stated twice. Mark *planned* until P13 lands, then say what P13 actually built rather than naming a database for its own sake. |
+| "PostgreSQL (JSONB evidence + snapshots)" | S3 platform | **Built 2026-09-21 — P13**, scoped: `store/` is a real, tested repository (`Run`, `RunStore`, `diff_runs`) behind a `JsonlRunStore` default; snapshots and run-to-run diff work end to end (`ecdat ledger-run` / `runs` / `diff`). Postgres itself is not running — no `postgres`/`psycopg`/`sqlalchemy` in `src/` or `pyproject.toml`. | **Say what's true:** persistence and diff are built and demoable; the backing store is file-based pending a `PostgresRunStore` adapter behind the same interface. Do not claim Postgres is running. |
 | "RBAC + audit log" | S3 platform **and** S4's challenge row | zero hits for `rbac`, `audit_log`, `audit log` in `src/` or `tests/` | **Keep — P17.** This is not decoration: it is the stated answer to the challenge *"the inventory is itself a sensitive asset."* Deleting it would weaken an answer the deck needs to give. Mark *planned*. |
 | "no egress (test-enforced)" | S3 **and** S4 | **No `harness/` directory exists in this repo at all** — no compose file, no `internal: true`, nothing configured. Corrected 2026-09-21; the earlier note that this was "already configured" was wrong. | **Keep — P18.** The requirement is right; neither half exists yet — network isolation is unconfigured and untested. |
 | "the dates at which the ranking flips are printed" | S4, answering *"the arrival date Z is genuinely contested"* | **Built 2026-09-21 — P19.** `risk/sensitivity.py`, wired into the API and the dashboard's "Under other Z" column. | **Keep, now true.** |
