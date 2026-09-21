@@ -58,6 +58,7 @@ from ecdat.adapters.packages.adapter import live_scan_runner as live_packages_ru
 from ecdat.adapters.source.semgrep import SemgrepSourceAdapter
 from ecdat.adapters.tls.adapter import TlsEndpointAdapter, TlsProbeBundle
 from ecdat.correlation.engine import CorrelationReport, ForbiddenEdgeError, correlate
+from ecdat.correlation.graph import EvidenceGraph, build_graph
 from ecdat.model.evidence import ConfidenceBasis
 from ecdat.model.topology import ProbeTargetIdentity
 from ecdat.risk.run import LedgerSubject, evaluate_run
@@ -572,6 +573,40 @@ def _correlate_document(report: CorrelationReport) -> dict[str, Any]:
     }
 
 
+def _graph_document(graph: EvidenceGraph) -> dict[str, Any]:
+    """P15's graph view, serialised. Every edge carries its `strength` field
+    verbatim -- nothing here decides which edges are shown or hides the
+    distinction between claimed and unclaimed."""
+    return {
+        "nodes": [
+            {
+                "asset_id": node.asset_id,
+                "algorithm_family": node.algorithm_family,
+                "purpose": node.purpose,
+                "scope_anchor": node.scope_anchor,
+            }
+            for node in graph.nodes
+        ],
+        "edges": [
+            {
+                "source": edge.source,
+                "target": edge.target,
+                "strength": edge.strength.value,
+                "type": edge.type,
+                "evidence_basis": edge.evidence_basis,
+                "rule_id": edge.rule_id,
+                "epistemic_state": edge.epistemic_state,
+                "note": edge.note,
+            }
+            for edge in graph.edges
+        ],
+        "gaps": [
+            {"from_layer": gap.from_layer, "to_layer": gap.to_layer, "why": gap.why}
+            for gap in graph.gaps
+        ],
+    }
+
+
 def _correlate(args: argparse.Namespace) -> int:
     try:
         plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
@@ -612,14 +647,25 @@ def _correlate(args: argparse.Namespace) -> int:
         print(f"correlation refused: {exc}", file=sys.stderr)
         return 3
 
-    document = _correlate_document(report)
+    if args.format == "graph":
+        document = _graph_document(build_graph(report))
+        summary = (
+            f"{len(results)} scan(s) -> {len(report.assets)} node(s), "
+            f"{len(document['edges'])} edge(s) ({sum(1 for e in document['edges'] if e['strength'] == 'claimed')} claimed, "
+            f"{sum(1 for e in document['edges'] if e['strength'] == 'unclaimed')} unclaimed), "
+            f"{len(document['gaps'])} named gap(s)"
+        )
+    else:
+        document = _correlate_document(report)
+        summary = (
+            f"{len(results)} scan(s) -> {len(report.assets)} asset(s), "
+            f"{len(report.relationships)} relationship(s)"
+        )
+
     output = json.dumps(document, indent=2, sort_keys=False)
     if args.out:
         Path(args.out).write_text(output + "\n", encoding="utf-8")
-        print(
-            f"{len(results)} scan(s) -> {len(report.assets)} asset(s), "
-            f"{len(report.relationships)} relationship(s) -> {args.out}"
-        )
+        print(f"{summary} -> {args.out}")
     else:
         print(output)
     return 0
@@ -898,6 +944,14 @@ def main(argv: list[str] | None = None) -> int:
         "else optional, defaulting the same way `scan` itself defaults it)",
     )
     correlate_parser.add_argument("--out", help="write the correlation report here (default: stdout)")
+    correlate_parser.add_argument(
+        "--format",
+        choices=["report", "graph"],
+        default="report",
+        help="'report' (default): the flattened asset/relationship document. "
+        "'graph' (build-plan.md P15): nodes, typed epistemically-labelled edges "
+        "(claimed vs unclaimed), and the named gaps this engine refuses to draw.",
+    )
     correlate_parser.set_defaults(func=_correlate)
 
     ledger_run = subparsers.add_parser(

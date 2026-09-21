@@ -5,6 +5,7 @@ import Closure from './Closure.jsx'
 import Coverage from './Coverage.jsx'
 import Recommend from './Recommend.jsx'
 import EvidenceCard from './EvidenceCard.jsx'
+import Graph from './Graph.jsx'
 
 // Presentation only. Every band, window and deadline shown here is computed by
 // the ledger and arrives over the API already decided; nothing in this bundle
@@ -16,6 +17,7 @@ const TABS = [
   ['closure', 'Closure queue'],
   ['recommend', 'Move to'],
   ['coverage', 'Coverage'],
+  ['graph', 'Evidence graph'],
 ]
 
 export default function App() {
@@ -32,6 +34,7 @@ export default function App() {
   const [tab, setTab] = useState('ledger')
   const [data, setData] = useState({ ledger: null, closure: null, coverage: null })
   const [recommendations, setRecommendations] = useState(null)
+  const [graph, setGraph] = useState(null)
   const [selected, setSelected] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -65,6 +68,15 @@ export default function App() {
       .then(setRecommendations)
       .catch((e) => setError(String(e)))
   }, [policy.profile])
+
+  // The graph is a cross-surface view, not a per-scenario one -- it does not
+  // depend on Z or policy, so it is fetched once.
+  useEffect(() => {
+    fetch('api/graph')
+      .then((r) => r.json())
+      .then(setGraph)
+      .catch((e) => setError(String(e)))
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -147,6 +159,7 @@ export default function App() {
         {tab === 'closure' && data.closure && <Closure data={data.closure} />}
         {tab === 'recommend' && recommendations && <Recommend data={recommendations} />}
         {tab === 'coverage' && data.coverage && <Coverage data={data.coverage} />}
+        {tab === 'graph' && graph && <Graph data={graph} />}
       </main>
 
       {selected && <EvidenceCard record={selected} onClose={() => setSelected(null)} />}

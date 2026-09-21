@@ -25,10 +25,15 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from ecdat.adapters.base import ScanTarget
+from ecdat.adapters.certs.adapter import CertificateAdapter
 from ecdat.closure.engine import closure_queue, tasks_for
 from ecdat.context.binding import Lifetime
+from ecdat.correlation.engine import CorrelationReport, correlate
+from ecdat.correlation.graph import EvidenceGraph, build_graph
 from ecdat.export.cyclonedx import build_bom
 from ecdat.model.epistemic import EpistemicState
+from ecdat.model.evidence import ConfidenceBasis
 from ecdat.recommend.engine import (
     NoCitedOptionError,
     Profile,
@@ -59,6 +64,46 @@ DEFAULT_SUBJECTS = (
 def load_subjects(path: Path) -> list[LedgerSubject]:
     document = json.loads(path.read_text(encoding="utf-8"))
     return [LedgerSubject.model_validate(row) for row in document["subjects"]]
+
+
+CorrelationProvider = Callable[[], CorrelationReport]
+
+#: Three services, one certificate copied byte-for-byte between two of them
+#: (a real `same-object` edge) and re-issued on the same key at the third (a
+#: real `shares_public_key_unclaimed` pair) -- pre-generated fixture
+#: certificates plus a plan file, the exact shape `ecdat correlate --plan`
+#: reads. `confidence` and its justification live in the plan file (data),
+#: never as a literal in this module: src/'s own citation guard
+#: (test_no_confidence_literal_is_hardcoded_in_src) forbids a hardcoded
+#: `base_confidence=<number>` in src/, because no cited table exists yet
+#: (OI-004) and every real value must come from an explicit, justified
+#: source outside the code -- here, the fixture's own data file.
+DEFAULT_CORRELATION_PLAN = (
+    Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "correlation" / "demo_plan.json"
+)
+
+
+def load_correlation_report(plan_path: Path) -> CorrelationReport:
+    """Run `certs-x509` over every entry in a correlate-style plan file and
+    return the resulting `CorrelationReport` -- the same path `ecdat
+    correlate` drives, just without argparse in between."""
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    base_dir = plan_path.parent
+    results = []
+    for entry in plan:
+        basis = ConfidenceBasis(
+            source="ADAPTER_DECLARED", justification=entry["confidence_justification"]
+        )
+        adapter = CertificateAdapter(base_confidence=entry["confidence"], confidence_basis=basis)
+        target = ScanTarget(target_id=entry["target_id"], locator=str(base_dir / entry["input"]))
+        results.append(adapter.run(target))
+    return correlate(results)
+
+
+def default_correlation_report() -> CorrelationReport:
+    """P15's demo graph. Clearly a fixture in the UI, exactly like
+    `DEFAULT_SUBJECTS` is -- no adapter has scanned anything real."""
+    return load_correlation_report(DEFAULT_CORRELATION_PLAN)
 
 
 def _policy(
@@ -248,6 +293,7 @@ def create_app(
     subjects_provider: SubjectsProvider | None = None,
     *,
     static_dir: Path | None = None,
+    correlation_provider: CorrelationProvider | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Pramana",
@@ -255,6 +301,10 @@ def create_app(
         version="0.1.0",
     )
     provider: SubjectsProvider = subjects_provider or (lambda: load_subjects(DEFAULT_SUBJECTS))
+    #: Computed once per app instance, not per request -- it runs a real
+    #: adapter and the correlation engine, and (like DEFAULT_SUBJECTS) is
+    #: fixture data, not a live scan.
+    correlation_report = (correlation_provider or default_correlation_report)()
 
     def run(
         scenario_id: str,
@@ -358,6 +408,42 @@ def create_app(
         as_of: date | None = Query(None),
     ) -> dict[str, Any]:
         return _coverage(run(scenario, capture, since, accept_inferred, rollout_y_days, as_of))
+
+    @app.get("/api/graph")
+    def graph() -> dict[str, Any]:
+        """P15: the evidence graph view. `fixture` is always true today --
+        `correlation_report` is `default_correlation_report()` unless a
+        caller wires a real one in, exactly like `DEFAULT_SUBJECTS`."""
+        evidence_graph: EvidenceGraph = build_graph(correlation_report)
+        return {
+            "fixture": True,
+            "nodes": [
+                {
+                    "asset_id": n.asset_id,
+                    "algorithm_family": n.algorithm_family,
+                    "purpose": n.purpose,
+                    "scope_anchor": n.scope_anchor,
+                }
+                for n in evidence_graph.nodes
+            ],
+            "edges": [
+                {
+                    "source": e.source,
+                    "target": e.target,
+                    "strength": e.strength.value,
+                    "type": e.type,
+                    "evidence_basis": e.evidence_basis,
+                    "rule_id": e.rule_id,
+                    "epistemic_state": e.epistemic_state,
+                    "note": e.note,
+                }
+                for e in evidence_graph.edges
+            ],
+            "gaps": [
+                {"from_layer": g.from_layer, "to_layer": g.to_layer, "why": g.why}
+                for g in evidence_graph.gaps
+            ],
+        }
 
     @app.get("/api/profiles")
     def profiles() -> dict[str, Any]:

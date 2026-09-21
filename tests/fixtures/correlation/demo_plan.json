@@ -1,0 +1,23 @@
+[
+  {
+    "adapter": "certs-x509",
+    "target_id": "svc-a",
+    "input": "svc-a",
+    "confidence": 0.9,
+    "confidence_justification": "dashboard fixture for the P15 graph view -- demonstrates edge types, not a real scan"
+  },
+  {
+    "adapter": "certs-x509",
+    "target_id": "svc-b",
+    "input": "svc-b",
+    "confidence": 0.9,
+    "confidence_justification": "dashboard fixture for the P15 graph view -- demonstrates edge types, not a real scan"
+  },
+  {
+    "adapter": "certs-x509",
+    "target_id": "svc-c",
+    "input": "svc-c",
+    "confidence": 0.9,
+    "confidence_justification": "dashboard fixture for the P15 graph view -- demonstrates edge types, not a real scan"
+  }
+]

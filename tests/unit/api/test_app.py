@@ -352,3 +352,28 @@ def test_profiles_endpoint_cites_each_profile(client):
     body = client.get("/api/profiles").json()
     assert body["default"] == "NIST_L3"
     assert all(p["citation"].startswith("docs/architecture/") for p in body["profiles"])
+
+
+def test_graph_endpoint_is_labelled_as_a_fixture_and_carries_both_edge_strengths(client):
+    """P15: nodes, typed edges with both strengths present in this demo
+    fixture, and the two named gaps -- never silently dropped."""
+    body = client.get("/api/graph").json()
+    assert body["fixture"] is True
+    assert len(body["nodes"]) >= 3
+
+    strengths = {edge["strength"] for edge in body["edges"]}
+    assert "claimed" in strengths
+    assert "unclaimed" in strengths
+
+    claimed = [e for e in body["edges"] if e["strength"] == "claimed"]
+    assert all(e["rule_id"] == "IDENTITY-CERT-DER-001" for e in claimed)
+    assert all(e["evidence_basis"] == "content_identity" for e in claimed)
+
+    unclaimed = [e for e in body["edges"] if e["strength"] == "unclaimed"]
+    assert all(e["rule_id"] is None for e in unclaimed)
+    assert all(e["type"] == "shares_public_key_unclaimed" for e in unclaimed)
+
+    layers = {(g["from_layer"], g["to_layer"]) for g in body["gaps"]}
+    assert ("library", "usage") in layers
+    assert ("service", "protected data") in layers
+    assert all(g["why"] for g in body["gaps"])

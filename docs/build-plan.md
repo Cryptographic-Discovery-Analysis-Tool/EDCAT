@@ -328,36 +328,57 @@ refused**.
 **Done when:** every agility field carries its own epistemic state like every other
 field in the model, and `check_data_citations.py` still passes.
 
-### P15 — Evidence graph view
+### P15 — Evidence graph view — **done (2026-09-21)**
 
 **Falls under:** P6 (correlation — recorded above as "partial, done for its defined
-scope"). The data already exists; only the rendering does not.
+scope"). The data already existed; `correlation/graph.py` is the rendering.
 
-`CorrelationReport` already carries the assets, the `same-object` relationships
-gated through `IDENTITY-CERT-DER-001`, and the `shares_public_key_unclaimed` pairs
-that deliberately are *not* relationships. That is a graph in everything but
-presentation.
+Built as `correlation/graph.py::build_graph(report)`, presentation-only over a
+`CorrelationReport`: every `same-object` `Relationship` becomes a `CLAIMED` edge
+carrying its `type`, `evidence_basis`, `rule_id` and `epistemic_state`; every
+`shares_public_key_unclaimed` pair becomes an `UNCLAIMED` edge with `rule_id=None`
+(OI-006 — no registered rule_id exists for that claim, and `EdgeStrength` is a
+closed two-value enum so a renderer cannot invent a third, stronger one). The two
+refused links from the review's seven-layer chain (library → usage, service →
+protected data) are `CHAIN_GAPS`, a fixed, cited list a caller must actively choose
+not to show — never blank space.
 
-Deliverables: a graph tab in the dashboard, and `ecdat correlate --format graph`.
+Deliverables, both shipped: `ecdat correlate --format graph` (CLI, tested end to
+end against a real duplicated-certificate plan) and a dashboard "Evidence graph"
+tab (`ui/dashboard/src/Graph.jsx`) backed by `GET /api/graph`, verified live: a
+solid arrow for the one claimed same-object edge, a visibly weaker dashed arrow for
+the two unclaimed shares-key edges, and both named gaps rendered with their `why`.
 
-**Hard requirements, because this is the easiest place in the whole project to
-draw a lie:**
+**Hard requirements, verified:**
 
-- every edge renders its type *and* its epistemic basis;
-- `shares_public_key_unclaimed` renders as a visibly weaker edge than `same-object`,
-  and never collapses into it — there is no registered rule_id for that claim
-  (OI-006), and the renderer must not invent one by drawing the same line;
-- edges that do not exist are drawn as named gaps, not as blank space.
+- every edge renders its type *and* its epistemic basis — `test_every_edge_states_its_type_and_epistemic_basis`
+  checks this structurally, not just for the fixture's own edges;
+- `shares_public_key_unclaimed` renders as a visibly weaker edge than `same-object`
+  and never collapses into it — `EdgeStrength.UNCLAIMED != EdgeStrength.CLAIMED` is
+  asserted directly, and the dashboard renders the two with different line styles;
+- edges that do not exist are drawn as named gaps, not as blank space —
+  `CHAIN_GAPS` always renders, even for an empty report.
 
-**Explicitly not built, and not to be drawn:** the review sketched a seven-layer
-chain — crypto API → config → algorithm → library → certificate → service →
-protected data. Two of those edges are real (config → algorithm, from P3;
-certificate → service, from P4). **Library → usage is not**: the package and binary
-readers refuse to claim usage on purpose, and that refusal is tested. **Service →
-protected data is not**: the data class is DECLARED by a person, and there is still
-nowhere to declare it (P6's open item). Rendering the clean chain would be precisely
-the false-certainty failure this tool exists to prevent, on the one screen a judge
-is most likely to photograph.
+**Explicitly not built, and not drawn:** the review's seven-layer chain — crypto API
+→ config → algorithm → library → certificate → service → protected data. Two of
+those edges are real (config → algorithm, from P3; certificate → service, from P4)
+and are drawn from the report itself when they exist. **Library → usage is not**:
+the package and binary readers refuse to claim usage on purpose, and that refusal
+is tested. **Service → protected data is not**: the data class is DECLARED by a
+person, and there is still nowhere to declare it (P6's open item). Both are named
+in `CHAIN_GAPS` with their `why`, never rendered as a line.
+
+The API's demo fixture (`tests/fixtures/correlation/demo_plan.json` +
+pre-generated certs) runs the real `certs-x509` adapter and the real correlation
+engine — not hand-built assets — the same way `ecdat correlate --plan` would.
+Confidence and its justification live in that plan file as data, never as a
+literal in `src/`, per `tests/unit/data/test_base_confidence.py`'s own guard
+(caught and fixed during this build: an earlier draft hardcoded
+`base_confidence=0.9` directly in `api/app.py` and failed that guard).
+
+Tests: `tests/unit/correlation/test_graph.py` (5, against real adapter runs) and
+`tests/unit/api/test_app.py::test_graph_endpoint_is_labelled_as_a_fixture_and_carries_both_edge_strengths`.
+502 tests pass (was 496); `tools/ci/check_data_citations.py` still passes.
 
 ### P16–P19 — deck promises that are real requirements and are not built yet
 
