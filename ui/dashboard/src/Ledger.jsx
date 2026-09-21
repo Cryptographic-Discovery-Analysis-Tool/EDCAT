@@ -49,6 +49,7 @@ export default function Ledger({ data, onSelect }) {
             <th>Doing what</th>
             <th>Exposed window</th>
             <th>Deadline</th>
+            <th>Under other Z</th>
           </tr>
         </thead>
         <tbody>
@@ -93,6 +94,20 @@ export default function Ledger({ data, onSelect }) {
                 )}
               </td>
               <td className="small">{row.deadline ?? <span className="faint">—</span>}</td>
+              <td className="small">
+                {row.sensitivity?.scenario_sensitive ? (
+                  <span
+                    className="badge badge-sensitive"
+                    title={row.sensitivity.under_scenario
+                      .map((o) => `${o.label}: ${o.band}`)
+                      .join(' · ')}
+                  >
+                    flips at {row.sensitivity.first_flip?.label ?? '?'}
+                  </span>
+                ) : (
+                  <span className="faint">stable across Z</span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

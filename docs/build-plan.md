@@ -359,7 +359,7 @@ One of the five below is genuinely a deletion. Four are phases.
 | "PostgreSQL (JSONB evidence + snapshots)" | S3 platform | `store/__init__.py` is 0 bytes; no `postgres`/`psycopg`/`sqlalchemy` in `src/` or `pyproject.toml` | **Keep — P13 builds it.** Slide 5's "snapshots show new exposure, closed windows and certificate change" is the same requirement stated twice. Mark *planned* until P13 lands, then say what P13 actually built rather than naming a database for its own sake. |
 | "RBAC + audit log" | S3 platform **and** S4's challenge row | zero hits for `rbac`, `audit_log`, `audit log` in `src/` or `tests/` | **Keep — P17.** This is not decoration: it is the stated answer to the challenge *"the inventory is itself a sensitive asset."* Deleting it would weaken an answer the deck needs to give. Mark *planned*. |
 | "no egress (test-enforced)" | S3 **and** S4 | **No `harness/` directory exists in this repo at all** — no compose file, no `internal: true`, nothing configured. Corrected 2026-09-21; the earlier note that this was "already configured" was wrong. | **Keep — P18.** The requirement is right; neither half exists yet — network isolation is unconfigured and untested. |
-| "the dates at which the ranking flips are printed" | S4, answering *"the arrival date Z is genuinely contested"* | zero hits for `flip`; the UI switches Z one scenario at a time, and nothing computes or prints the date a row changes band | **Keep — P19.** A real innovation claim, and cheap: the three scenarios and the closure engine's counterfactual re-evaluation already exist. |
+| "the dates at which the ranking flips are printed" | S4, answering *"the arrival date Z is genuinely contested"* | **Built 2026-09-21 — P19.** `risk/sensitivity.py`, wired into the API and the dashboard's "Under other Z" column. | **Keep, now true.** |
 | "Trivy / **Syft**" | S3 sensors | no reference to Syft anywhere in `src/`, `tests/` or `tools/` | **The one real deletion.** Trivy already provides the package inventory this needs, and `packages-trivy` is built and live-proven. Syft would add a second tool for the same fact. Cut the word. |
 
 Separately, a wording fix rather than a phase: slide 2 (iv) promises recommendations
@@ -395,27 +395,33 @@ that asserts a container on it cannot reach the outside world. Until both
 land, the deck should say neither "enforced by the network definition" nor
 "test-enforced" — say nothing about egress isolation at all.
 
-### P19 — Scenario sensitivity: print the date the ranking flips
+### P19 — Scenario sensitivity: print the date the ranking flips — **done (2026-09-21)**
 
 **Falls under:** ledger phase 3 (*scenario engine*, built) and phase 5 (*closure
-engine*, built). Both halves exist; nothing joins them.
+engine*, built). Both halves existed; `risk/sensitivity.py` joins them.
 
-`data/scenarios.yaml` carries all three Z dates, `Scenario.load_all()` already
-reads them, and `closure/engine.py` already re-evaluates a record under alternative
-inputs (`_algorithm_candidates`, `_start_candidates`, `_migration_candidates`, …) to
-work out what a missing fact could turn out to be. Printing "this row is BLEEDING
-under Z=2031 and 2036, SAVABLE under Z=2041" is that same counterfactual machinery
-pointed at the scenario axis instead of the evidence axis.
+Built as `risk/sensitivity.py::sensitivity_for(record)`: re-runs the record's own
+ledger (`authentication_ledger` or `confidentiality_ledger`, picked the same way
+`replay()` picks it) once per cited scenario in `data/scenarios.yaml`, ordered
+earliest-Z first. `scenario_sensitive` is true iff the band is not identical across
+all three; `first_flip` names the earliest-Z scenario after the baseline whose band
+differs, with its own real, ledger-computed deadline — no date is interpolated
+between scenarios, consistent with §5.12's rejection of a probabilistic Z.
 
-Why it is worth a phase of its own: it converts the deck's weakest-sounding
-admission — *we do not know when Z is* — into its strongest move. A tool that says
-"here is the date at which this ranking changes, and here is the row that changes
-first" has turned a contested assumption into an output. Nothing else on this list
-buys that much for as little code.
+Wired into `api/app.py::_row()` as a `sensitivity` field on every ledger row (so
+`/api/ledger`, `/api/records/{id}`, and the evidence card all carry it without a
+second endpoint), and into `ui/dashboard/src/Ledger.jsx` as an "Under other Z"
+column: a `flips at <scenario>` badge (hover shows the band under all three) or
+`stable across Z`. Verified live against the fixture at `/`: the SAVABLE
+legacy-settlement row reads "flips at Central" and the RESIGN_BEFORE_Z
+firmware-release row reads "flips at Optimistic"; every other row reads "stable
+across Z" — all real re-runs, not invented labels.
 
-**Done when:** every ledger row carries its band under all three scenarios, and the
-UI shows which rows are scenario-sensitive without the operator having to flip the
-control and remember what it said before.
+Tests: `tests/unit/risk/test_sensitivity.py` (module-level, against the frozen §6
+test set) and `test_app.py::test_scenario_sensitivity_flags_rows_that_actually_move`
+(end-to-end: derives which fixture rows actually move across all three scenarios
+independently of the flag, then asserts the flag agrees). 472 tests pass (was 467);
+`tools/ci/check_data_citations.py` still passes.
 
 ### Ordering
 

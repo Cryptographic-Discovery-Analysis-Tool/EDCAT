@@ -204,6 +204,16 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .band-SAVABLE { color: var(--text); }
 .band-SAFE, .band-SAFE_UNTIL_Z { color: var(--accent); }
 
+.badge-sensitive {
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid var(--warn);
+  border-radius: 3px;
+  color: var(--warn);
+  white-space: nowrap;
+  cursor: help;
+}
+
 .status {
   font-size: 10px;
   padding: 1px 5px;

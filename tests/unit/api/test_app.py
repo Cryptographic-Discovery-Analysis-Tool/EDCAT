@@ -109,6 +109,41 @@ def test_changing_the_scenario_moves_bands(client):
     assert moved, "no row changed band between Z dates"
 
 
+def test_scenario_sensitivity_flags_rows_that_actually_move(client):
+    """P19: every row carries its band under all three cited Z dates, and the
+    rows this test just proved move between scenarios must be the ones marked
+    scenario_sensitive -- not a separately-invented flag."""
+    by_scenario = {
+        scenario: {
+            r["usage_context_id"]: r["band"]
+            for r in client.get("/api/ledger", params=q(scenario=scenario)).json()["rows"]
+        }
+        for scenario in ("Z_aggressive", "Z_central", "Z_optimistic")
+    }
+    central = client.get("/api/ledger", params=q(scenario="Z_central")).json()["rows"]
+
+    moved = {
+        uid
+        for uid in by_scenario["Z_central"]
+        if len({bands[uid] for bands in by_scenario.values()}) > 1
+    }
+    assert moved
+
+    for row in central:
+        sensitivity = row["sensitivity"]
+        assert {o["scenario_id"] for o in sensitivity["under_scenario"]} == {
+            "Z_aggressive",
+            "Z_central",
+            "Z_optimistic",
+        }
+        if row["usage_context_id"] in moved:
+            assert sensitivity["scenario_sensitive"] is True
+            assert sensitivity["first_flip"] is not None
+        else:
+            assert sensitivity["scenario_sensitive"] is False
+            assert sensitivity["first_flip"] is None
+
+
 def test_changing_the_capture_assumption_moves_a_start_date(client):
     """The archive node has a notBefore and no observation: unbounded under
     SINCE_CONFIRMED, banded under SINCE_POSSIBLE."""

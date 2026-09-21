@@ -44,6 +44,7 @@ from ecdat.risk.scenarios import (
     Policy,
     Scenario,
 )
+from ecdat.risk.sensitivity import sensitivity_for
 
 SubjectsProvider = Callable[[], list[LedgerSubject]]
 
@@ -80,6 +81,42 @@ def _scenario(scenario_id: str) -> Scenario:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
+def _sensitivity(record: CalculationRecord) -> dict[str, Any]:
+    """P19: every row's band, re-run under all three cited Z dates, so a row
+    that would answer differently under a different scenario says so without
+    the operator having to flip the control and remember what it said before.
+    """
+    sensitivity = sensitivity_for(record)
+    return {
+        "scenario_sensitive": sensitivity.scenario_sensitive,
+        "under_scenario": [
+            {
+                "scenario_id": o.scenario_id,
+                "label": o.label,
+                "z_date": o.z_date.isoformat(),
+                "band": o.band.value,
+                "deadline": o.deadline.isoformat() if o.deadline else None,
+            }
+            for o in sensitivity.outcomes
+        ],
+        "first_flip": (
+            {
+                "scenario_id": sensitivity.first_flip.scenario_id,
+                "label": sensitivity.first_flip.label,
+                "z_date": sensitivity.first_flip.z_date.isoformat(),
+                "band": sensitivity.first_flip.band.value,
+                "deadline": (
+                    sensitivity.first_flip.deadline.isoformat()
+                    if sensitivity.first_flip.deadline
+                    else None
+                ),
+            }
+            if sensitivity.first_flip is not None
+            else None
+        ),
+    }
+
+
 def _row(record: CalculationRecord) -> dict[str, Any]:
     """One ledger row, flattened for display. No input is summarised away that
     a reader would need in order to disagree with the band."""
@@ -110,6 +147,7 @@ def _row(record: CalculationRecord) -> dict[str, Any]:
         "M": record.M.isoformat() if record.M else None,
         "start_possible": record.start_possible.isoformat() if record.start_possible else None,
         "start_confirmed": record.start_confirmed.isoformat() if record.start_confirmed else None,
+        "sensitivity": _sensitivity(record),
     }
 
 
