@@ -358,7 +358,7 @@ One of the five below is genuinely a deletion. Four are phases.
 |---|---|---|---|
 | "PostgreSQL (JSONB evidence + snapshots)" | S3 platform | `store/__init__.py` is 0 bytes; no `postgres`/`psycopg`/`sqlalchemy` in `src/` or `pyproject.toml` | **Keep — P13 builds it.** Slide 5's "snapshots show new exposure, closed windows and certificate change" is the same requirement stated twice. Mark *planned* until P13 lands, then say what P13 actually built rather than naming a database for its own sake. |
 | "RBAC + audit log" | S3 platform **and** S4's challenge row | zero hits for `rbac`, `audit_log`, `audit log` in `src/` or `tests/` | **Keep — P17.** This is not decoration: it is the stated answer to the challenge *"the inventory is itself a sensitive asset."* Deleting it would weaken an answer the deck needs to give. Mark *planned*. |
-| "no egress (test-enforced)" | S3 **and** S4 | `harness/compose/docker-compose.yml` sets `internal: true` (H6); **no test asserts it** | **Keep — P18.** The requirement is right and already configured. Only the word *test-enforced* is ahead of the code, and closing that gap is one test. |
+| "no egress (test-enforced)" | S3 **and** S4 | **No `harness/` directory exists in this repo at all** — no compose file, no `internal: true`, nothing configured. Corrected 2026-09-21; the earlier note that this was "already configured" was wrong. | **Keep — P18.** The requirement is right; neither half exists yet — network isolation is unconfigured and untested. |
 | "the dates at which the ranking flips are printed" | S4, answering *"the arrival date Z is genuinely contested"* | zero hits for `flip`; the UI switches Z one scenario at a time, and nothing computes or prints the date a row changes band | **Keep — P19.** A real innovation claim, and cheap: the three scenarios and the closure engine's counterfactual re-evaluation already exist. |
 | "Trivy / **Syft**" | S3 sensors | no reference to Syft anywhere in `src/`, `tests/` or `tools/` | **The one real deletion.** Trivy already provides the package inventory this needs, and `packages-trivy` is built and live-proven. Syft would add a second tool for the same fact. Cut the word. |
 
@@ -386,10 +386,14 @@ read or exported what. Export is the sensitive verb here, not scanning.
 
 **Falls under:** the harness, not `src/`. Smallest phase on this list.
 
-`internal: true` is already set. Add the test that asserts a container on
-`payments-internal` cannot reach the outside world, so the deck's word
-*test-enforced* becomes true. Until it passes, the deck says "enforced by the
-network definition."
+**Corrected 2026-09-21:** there is no `harness/` directory in this repo — not
+the compose file, not `internal: true`, nothing. The earlier note in this plan
+claiming `internal: true` was "already set" was wrong; it cited a file that
+does not exist here. Both halves are unbuilt: write the compose network
+definition with `internal: true` on the isolated network, then add the test
+that asserts a container on it cannot reach the outside world. Until both
+land, the deck should say neither "enforced by the network definition" nor
+"test-enforced" — say nothing about egress isolation at all.
 
 ### P19 — Scenario sensitivity: print the date the ranking flips
 
