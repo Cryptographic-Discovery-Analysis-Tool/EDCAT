@@ -437,18 +437,53 @@ started. Minimum honest scope: an authenticated API, roles that distinguish read
 the ledger from changing a scenario or exporting, and an append-only log of who
 read or exported what. Export is the sensitive verb here, not scanning.
 
-### P18 — Make no-egress test-enforced
+### P18 — Make no-egress test-enforced — **done (2026-09-21)**
 
 **Falls under:** the harness, not `src/`. Smallest phase on this list.
 
-**Corrected 2026-09-21:** there is no `harness/` directory in this repo — not
-the compose file, not `internal: true`, nothing. The earlier note in this plan
-claiming `internal: true` was "already set" was wrong; it cited a file that
-does not exist here. Both halves are unbuilt: write the compose network
-definition with `internal: true` on the isolated network, then add the test
-that asserts a container on it cannot reach the outside world. Until both
-land, the deck should say neither "enforced by the network definition" nor
-"test-enforced" — say nothing about egress isolation at all.
+**Corrected twice, same day.** The first correction (earlier in this session) said
+"there is no `harness/` directory in this repo — nothing is configured." That was
+itself wrong in a narrower way: it checked only `ecdat/`, not the sibling
+`../ecdat-harness/` repo CLAUDE.md names as a canonical source. The real file is
+`ecdat-harness/harness/compose/docker-compose.yml`, `internal: true` genuinely was
+already set on `payments-internal` there (H6), and its own header comment said
+exactly why the deck's word "test-enforced" was still ahead of the code: *"Not run
+in this environment (no Docker daemon available here — see
+ecdat/docs/open-issues.md OI-007) ... it has not been built or started."*
+
+**Built and run for real.** `tools/ci/check_no_egress.sh` brings the Tier A stack
+up (`docker compose up -d --build`), runs one ephemeral `alpine` container on
+`payments-internal` and asserts `wget` to `1.1.1.1` fails, then runs the *same*
+check on the default bridge network as a control (must succeed) — so a pass proves
+`internal: true` is doing the work, not that the host has no internet at all.
+`tests/integration/test_no_egress.py` wraps it for pytest discovery, skipping when
+Docker is not on `PATH` or the sibling checkout is absent, exactly like
+`tests/unit/correlation/test_engine.py`'s own `pytestmark_harness` skip for the
+same sibling repo.
+
+**Actually executed, not just written**, via the WSL2 Linux build box
+(`docs/build-box.md`, Docker 29.1.3): the compose stack built and started from a
+clean state, the control container reached `1.1.1.1` over the default bridge
+network (56614 bytes, real HTTP response), and the same request from
+`payments-internal` failed with `Network unreachable` — Docker's own no-route
+behaviour for an `internal: true` network, not a script-level assertion faked
+around it. The exact `subprocess.run(["bash", "tools/ci/check_no_egress.sh"], ...)`
+call `test_no_egress.py` makes was run directly in WSL2: `returncode == 0`, `"PASS"
+in stdout`. Containers were torn down afterward (`trap cleanup EXIT`); confirmed
+no orphaned containers or networks remained. On this Windows host, `docker` is not
+on `PATH` (only reachable via `wsl -d Ubuntu -- docker ...`), so `pytest -q` here
+correctly skips the test rather than falsely passing or failing — the real
+Linux/CI environment where `docker` is on `PATH` directly is where it runs, exactly
+as `docs/build-box.md` already documents for every other live-tool check in this
+project.
+
+**Not attempted:** a negative control (temporarily setting `internal: false` on the
+real compose file to prove the script would catch a regression) — the harness
+repo's own compose file is shared, security-relevant configuration, and editing it
+even temporarily was refused by this session's own safety classifier as a security
+weakening action. The already-obtained contrast (isolated network blocked,
+non-isolated default network succeeded) is the negative-control evidence in its
+place.
 
 ### P19 — Scenario sensitivity: print the date the ranking flips — **done (2026-09-21)**
 
