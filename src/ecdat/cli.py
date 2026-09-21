@@ -72,6 +72,15 @@ from ecdat.risk.scenarios import (
 from ecdat.context.binding import Lifetime
 from ecdat.store import DiffClass, JsonlRunStore, NoSuchRunError, Run
 from ecdat.store.diff import diff_runs
+from ecdat.export.signing import (
+    MissingSignatureError,
+    SignatureVerificationError,
+    generate_signing_key,
+    load_signing_key,
+    private_key_pem,
+    verify_bom,
+)
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 #: Every adapter that exists, keyed by its own declared `adapter_id`. Not
 #: only a CLI concern -- kept as the canonical id -> class map other code
@@ -820,6 +829,57 @@ def _diff(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- signed export: key generation and offline verification (OI-013) ------
+
+
+def _keygen(args: argparse.Namespace) -> int:
+    path = Path(args.out)
+    if path.exists() and not args.force:
+        print(f"{path} already exists; pass --force to overwrite it", file=sys.stderr)
+        return 2
+    key = generate_signing_key()
+    path.write_bytes(private_key_pem(key))
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass  # best-effort on platforms without POSIX permission bits
+    public = key.public_key().public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw)
+    import base64
+
+    fingerprint = base64.urlsafe_b64encode(public).rstrip(b"=").decode("ascii")
+    print(f"wrote Ed25519 private key -> {path}")
+    print(f"public key (base64url, for out-of-band distribution to a verifier): {fingerprint}")
+    print(
+        "set ECDAT_SIGNING_KEY_PATH to this file's path before running "
+        "`ecdat correlate`/serving the API to sign exports with it."
+    )
+    return 0
+
+
+def _verify_export(args: argparse.Namespace) -> int:
+    try:
+        document = json.loads(Path(args.file).read_text(encoding="utf-8"))
+    except OSError as exc:
+        print(f"could not read {args.file!r}: {type(exc).__name__}", file=sys.stderr)
+        return 2
+    except json.JSONDecodeError as exc:
+        print(f"{args.file!r} is not valid JSON: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        verify_bom(document)
+    except MissingSignatureError as exc:
+        print(f"unsigned: {exc}", file=sys.stderr)
+        return 1
+    except SignatureVerificationError as exc:
+        print(f"INVALID: {exc}", file=sys.stderr)
+        return 1
+
+    key_id = document["signature"].get("keyId", "(no keyId)")
+    print(f"signature valid -- keyId={key_id!r}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ecdat", description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1027,6 +1087,19 @@ def main(argv: list[str] | None = None) -> int:
     diff_parser.add_argument("--show-unchanged", action="store_true")
     diff_parser.add_argument("--json", action="store_true")
     diff_parser.set_defaults(func=_diff)
+
+    keygen_parser = subparsers.add_parser(
+        "keygen", help="generate an Ed25519 signing key for signed CBOM export (OI-013)"
+    )
+    keygen_parser.add_argument("--out", required=True, help="path to write the PEM private key")
+    keygen_parser.add_argument("--force", action="store_true", help="overwrite an existing file")
+    keygen_parser.set_defaults(func=_keygen)
+
+    verify_parser = subparsers.add_parser(
+        "verify-export", help="verify a signed CycloneDX export's JSF signature (OI-013)"
+    )
+    verify_parser.add_argument("--file", required=True, help="the exported CBOM JSON file")
+    verify_parser.set_defaults(func=_verify_export)
 
     args = parser.parse_args(argv)
     return args.func(args)

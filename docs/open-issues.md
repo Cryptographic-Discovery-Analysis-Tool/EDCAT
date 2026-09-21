@@ -399,26 +399,66 @@ there is no library upgrade that would do it for us.
 
 ---
 
-## OI-013 — signed export (JSF) is not implemented (2026-09-19)
+## OI-013 — RESOLVED 2026-09-21: signed export (JSF) is implemented
 
-**Status:** OPEN, deliberately deferred.
+**Was:** OPEN, deliberately deferred, pending a key custody story (P17's RBAC
+and audit log were the deferred prerequisite: "where a key lives, who can use
+it" needed the same auth/audit infrastructure this repo did not have until
+build-plan.md P17 landed).
 
-§3 lists "signed export (VERIFY JSF field)" and §9 item 5 asks us to verify
-CycloneDX's JSF `signature` field. Neither is done. The export emits no
-`signature` and makes no integrity claim about itself beyond
-`pramana:exposure:inputs_sha256` on each row, which covers the INPUTS to a
-calculation, not the document.
+**Resolution:** `export/signing.py`. Ed25519 keys only, JSF's "simple
+signature" form, over RFC 8785 JCS-canonicalised bytes (`rfc8785`, pinned in
+pyproject.toml -- a security-critical canonicalisation algorithm is not worth
+reimplementing when a correct library exists, same reasoning as this
+project's existing use of `jsonschema` and `cryptography`).
+`schemas/jsf-0.82.schema.json` is the real schema, fetched once from
+CycloneDX's own `specification` repo (Apache-2.0) and vendored the same way
+`cyclonedx-1.6.schema.json` was -- the permissive `{"definitions":
+{"signature": {}}}` stub `export/cyclonedx.py::_validator()` used before this
+is gone; every `signature` this module emits is schema-checked for real.
 
-**Why deferred, not forgotten:** signing needs a key, and a key needs a
-custody story -- where it lives, who can use it, how it is rotated, and what a
-verifier is supposed to trust. §8's definition of finished lists "encrypted
-export" and "signed offline update bundle" under hardening, alongside RBAC and
-the audit log, which is where that story belongs. Bolting a signature on now
-would produce a document that looks authenticated and is not.
+**A real schema bug was caught doing this, not assumed:** with the real JSF
+schema wired in, the first signed document failed validation. JSF's
+`signature.algorithm` is a `oneOf` between a fixed enum (`"Ed25519"`, etc.)
+and a `format: "uri"` branch for proprietary algorithms. `jsonschema`'s
+default `Draft7Validator` does not check `format` unless given a
+`FormatChecker` with the right checker installed (the `uri` format needs the
+`rfc3987` package, which `jsonschema[format]` pulls in) -- without one,
+`"Ed25519"` is *also* a syntactically valid (if meaningless) URI reference,
+so it matches both `oneOf` branches and fails "exactly one must match."
+Fixed by adding the `jsonschema[format]` extra and passing
+`format_checker=Draft7Validator.FORMAT_CHECKER` to the validator
+(`export/cyclonedx.py`).
 
-**Blocker for:** §8 item 4 is satisfied without it (schema validity, the
-undetermined bucket, no key bytes, third-party round-trip) so this does not
-block phase 6. It does block claiming "signed export" anywhere public.
+**Key custody, minimum honest version, stated rather than implied:** the
+private key is a file at a path named by `ECDAT_SIGNING_KEY_PATH`, never
+logged, held in memory only for the duration of one `sign_bom()` call.
+`ecdat keygen` generates one. Rotation is manual (generate, repoint the env
+var, restart) -- automated rotation with overlap is real "hardening" work §8
+already lists separately, not invented here. A verifier trusts only the bare
+embedded Ed25519 public key -- no certificate chain, no external PKI; that
+key's fingerprint has to reach a verifier some other way, which this module
+does not solve and says so in its own docstring rather than implying more
+trust than the mechanism provides.
+
+**Wired into:** `ecdat keygen` / `ecdat verify-export` (CLI) and `GET
+/api/export` (signs when `ECDAT_SIGNING_KEY_PATH` is configured, leaves the
+export unsigned and says so via `X-Pramana-Signed: false` when it is not --
+no silent default key). Verified live end to end: `ecdat keygen` -> sign ->
+`ecdat verify-export` reports `signature valid`; a tampered copy of the same
+file correctly reports `INVALID: signature does not verify`, exit 1.
+
+Tests: `tests/unit/export/test_signing.py` (16: round-trip, tamper detection
+on both the document and the signature value, wrong-key rejection, non-
+Ed25519 rejection, real schema validation, no raw key ever appears in a
+signed document) plus two in `test_app.py` (unsigned by default,
+signed-and-verifying when a key is configured). 560 tests pass;
+`check_data_citations.py` still passes.
+
+**Not attempted:** automated key rotation, a certificate chain
+(`certificatePath`), and any non-Ed25519 algorithm JSF's schema allows
+(RS*/PS*/ES*/HS*) -- all real "hardening" work, deliberately out of this
+close, same as the original deferral note already said.
 
 ---
 

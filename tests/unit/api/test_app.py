@@ -328,6 +328,30 @@ def test_export_is_offered_as_a_download(export_client):
     assert r.json()["specVersion"] == "1.6"
 
 
+def test_export_is_unsigned_by_default(export_client):
+    r = export_client.get("/api/export", params=BASE)
+    assert r.headers["x-pramana-signed"] == "false"
+    assert "signature" not in r.json()
+
+
+# --- signed export (OI-013) --------------------------------------------------
+
+
+def test_export_is_signed_when_a_key_is_configured():
+    from ecdat.export.signing import generate_signing_key, verify_bom
+
+    key = generate_signing_key()
+    registry = TokenRegistry.from_raw_tokens({EXPORTER_TOKEN: Role.EXPORTER})
+    app = create_app(token_registry=registry, signing_key=key, signing_key_id="test-signing-key")
+    signed_client = TestClient(app, headers={"Authorization": f"Bearer {EXPORTER_TOKEN}"})
+
+    r = signed_client.get("/api/export", params=BASE)
+    assert r.headers["x-pramana-signed"] == "true"
+    document = r.json()
+    assert document["signature"]["keyId"] == "test-signing-key"
+    verify_bom(document)  # must not raise -- a real, verifying signature
+
+
 # --- RBAC and the audit log (build-plan.md P17) ------------------------------
 
 

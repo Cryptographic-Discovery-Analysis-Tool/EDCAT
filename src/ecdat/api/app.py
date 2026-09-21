@@ -32,7 +32,10 @@ from ecdat.closure.engine import closure_queue, tasks_for
 from ecdat.context.binding import Lifetime
 from ecdat.correlation.engine import CorrelationReport, correlate
 from ecdat.correlation.graph import EvidenceGraph, build_graph
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from ecdat.export.cyclonedx import build_bom
+from ecdat.export.signing import sign_bom, signing_key_from_env
 from ecdat.model.epistemic import EpistemicState
 from ecdat.model.evidence import ConfidenceBasis
 from ecdat.recommend.engine import (
@@ -300,6 +303,8 @@ def create_app(
     correlation_provider: CorrelationProvider | None = None,
     token_registry: TokenRegistry | None = None,
     audit_log: AuditLog | None = None,
+    signing_key: Ed25519PrivateKey | None = None,
+    signing_key_id: str = "pramana-export-key",
 ) -> FastAPI:
     app = FastAPI(
         title="Pramana",
@@ -320,6 +325,12 @@ def create_app(
     audit = audit_log or InMemoryAuditLog()
     app.state.token_registry = registry
     app.state.audit_log = audit
+
+    #: OI-013. `None` when unconfigured (default: no ECDAT_SIGNING_KEY_PATH)
+    #: -- export proceeds unsigned rather than inventing a key. app.state
+    #: carries it so a test can pass one in without an env var round-trip.
+    key = signing_key if signing_key is not None else signing_key_from_env()
+    app.state.signing_key = key
 
     def _require(role: Role, verb: Verb):
         """One dependency factory used by every protected route. Every call
@@ -558,16 +569,25 @@ def create_app(
         as_of: date | None = Query(None),
         principal: Principal = Depends(require_exporter),
     ) -> JSONResponse:
-        """Every scenario in one document (ADR-005 decision 2)."""
+        """Every scenario in one document (ADR-005 decision 2). Signed
+        (OI-013) when the app was configured with a key; the response says
+        which, via `X-Pramana-Signed`, rather than leaving a caller to
+        infer it from parsing the body."""
         records: list[CalculationRecord] = []
         for scenario in Scenario.load_all():
             records.extend(
                 run(scenario.id, capture, since, accept_inferred, rollout_y_days, as_of).records
             )
         document = build_bom(records, timestamp=datetime.now(timezone.utc))
+        signed = app.state.signing_key is not None
+        if signed:
+            document = sign_bom(document, private_key=app.state.signing_key, key_id=signing_key_id)
         return JSONResponse(
             content=document,
-            headers={"Content-Disposition": 'attachment; filename="pramana-cbom.json"'},
+            headers={
+                "Content-Disposition": 'attachment; filename="pramana-cbom.json"',
+                "X-Pramana-Signed": "true" if signed else "false",
+            },
         )
 
     bundle = static_dir or (Path(__file__).resolve().parents[3] / "ui" / "dashboard" / "dist")

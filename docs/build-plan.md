@@ -221,7 +221,7 @@ table is the live status; that document is a dated snapshot (18 Sep 2026).
 | 3 Scenario engine | `risk/scenarios.py`, `context/binding.py`, `data/scenarios.yaml`, `data/data_lifetime.yaml`, `data/crypto_families.yaml` | implemented, unit-green |
 | 4 Exposure ledger | `risk/confidentiality_ledger.py`, `risk/authentication_ledger.py`, `risk/record.py` | implemented, all of §6 green |
 | 5 Closure engine | `closure/engine.py`, `data/closure_catalog.yaml` | implemented, unit-green |
-| 6 CBOM export | `export/cyclonedx.py` | implemented, unit-green; signed export deferred (OI-013) |
+| 6 CBOM export | `export/cyclonedx.py`, `export/signing.py` | implemented, unit-green; signed export built P20 (OI-013 resolved 2026-09-21) |
 | 7 Dashboard | `src/ecdat/api/` (FastAPI) + `ui/dashboard/` (React/Vite) | implemented, unit-green over fixtures; `ui/app.py` Flask prototype superseded but not deleted |
 | — Recommendation | `recommend/engine.py`, `data/pqc_options.yaml` | implemented, unit-green (Final Architecture Part 8; not a numbered ledger phase) |
 | 8 Harness scoring | `ground-truth/exposure.expected.yaml`, `score_run.py` extension | not started |
@@ -576,3 +576,62 @@ Then **P15** (the data is already computed), **P14**, **P18** (one test), and
 weighting into the analysis path. The review's own first recommendation was to keep
 entropy and PRNG-prediction research out of the SIH core; that agrees with CLAUDE.md
 and with slide 3's "no AI in the security path," and needs no phase.
+
+---
+
+## P20 — Signed export (OI-013 resolved) — **done (2026-09-21)**
+
+Self-directed: the deck is locked (no further deck work per instruction), and
+P13–P19 are closed. This phase continues the implementation by closing the one
+open issue P17's RBAC/audit-log work was itself blocking: OI-013, deferred
+specifically pending "a key needs a custody story," which P17 supplied.
+
+**Falls under:** ledger phase 6 (*CBOM export*, built). §3's "signed export
+(VERIFY JSF field)" and §9 item 5.
+
+Built as `export/signing.py`: Ed25519-only JSF signing over RFC 8785 JCS-
+canonicalised bytes (`rfc8785`, newly pinned — a security-critical
+canonicalisation algorithm is not reimplemented here, same reasoning already
+applied to `jsonschema`/`cryptography`). `schemas/jsf-0.82.schema.json` is the
+real schema, fetched once from CycloneDX's own `specification` repo
+(Apache-2.0) and vendored exactly the way `cyclonedx-1.6.schema.json` itself
+was — the permissive stub `export/cyclonedx.py::_validator()` used before this
+phase is gone; every `signature` this module produces is schema-checked for
+real, not merely schema-shaped.
+
+**A real schema bug was caught doing this, not assumed.** The first signed
+document failed validation against the real JSF schema: `signature.algorithm`
+is a `oneOf` between a fixed enum and a `format: "uri"` branch for proprietary
+algorithms, and `jsonschema`'s `Draft7Validator` does not check `format`
+without an attached `FormatChecker` (and `uri` specifically needs the
+`rfc3987` package). Without one, `"Ed25519"` is *also* a syntactically valid
+URI reference, matches both `oneOf` branches, and fails "exactly one must
+match." Fixed with the `jsonschema[format]` extra and
+`format_checker=Draft7Validator.FORMAT_CHECKER`.
+
+**Key custody, minimum honest version:** a PEM file at `ECDAT_SIGNING_KEY_PATH`
+(`ecdat keygen` generates one), never logged, held in memory only for the
+duration of one signature. Rotation is manual. A verifier trusts only the bare
+embedded Ed25519 public key — no certificate chain, no external PKI; that
+key's fingerprint reaching a verifier is a distribution problem this module
+does not solve and says so in its own docstring, rather than implying more
+trust than the mechanism provides. Automated rotation and a certificate chain
+are real hardening work, explicitly deferred, not silently dropped.
+
+**Wired into:** `ecdat keygen` / `ecdat verify-export` (CLI), and `GET
+/api/export` (signs when a key is configured; `X-Pramana-Signed: false` and an
+unsigned document otherwise — no silent default key). Verified live,
+end to end: `ecdat keygen` → sign → `ecdat verify-export` reports `signature
+valid`; a tampered copy of the same export correctly reports `INVALID:
+signature does not verify`, exit 1.
+
+Tests: `tests/unit/export/test_signing.py` (16 — round-trip, tamper detection
+on the document and on the signature value independently, wrong-key
+rejection, non-Ed25519 rejection, real schema validation, no raw key ever
+appears in a signed document) plus two in `test_app.py`. 560 tests pass (was
+543); `tools/ci/check_data_citations.py` still passes.
+
+**Not attempted:** automated key rotation with overlap, a `certificatePath`
+certificate chain, and any JSF algorithm other than Ed25519 (RS*/PS*/ES*/HS*)
+— all real hardening work, out of this close, matching OI-013's own original
+deferral note.
