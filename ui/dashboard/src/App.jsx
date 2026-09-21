@@ -6,6 +6,7 @@ import Coverage from './Coverage.jsx'
 import Recommend from './Recommend.jsx'
 import EvidenceCard from './EvidenceCard.jsx'
 import Graph from './Graph.jsx'
+import { apiFetch } from './api.js'
 
 // Presentation only. Every band, window and deadline shown here is computed by
 // the ledger and arrives over the API already decided; nothing in this bundle
@@ -53,8 +54,8 @@ export default function App() {
 
   useEffect(() => {
     Promise.all([
-      fetch('api/scenarios').then((r) => r.json()),
-      fetch('api/profiles').then((r) => r.json()),
+      apiFetch('api/scenarios').then((r) => r.json()),
+      apiFetch('api/profiles').then((r) => r.json()),
     ])
       .then(([scenarios, profiles]) => setMeta({ ...scenarios, ...profiles }))
       .catch((e) => setError(String(e)))
@@ -63,7 +64,7 @@ export default function App() {
   // Recommendations depend only on the profile: what to move to is a function
   // of what the key does, not of when Z is.
   useEffect(() => {
-    fetch(`api/recommendations?profile=${policy.profile}`)
+    apiFetch(`api/recommendations?profile=${policy.profile}`)
       .then((r) => r.json())
       .then(setRecommendations)
       .catch((e) => setError(String(e)))
@@ -72,7 +73,7 @@ export default function App() {
   // The graph is a cross-surface view, not a per-scenario one -- it does not
   // depend on Z or policy, so it is fetched once.
   useEffect(() => {
-    fetch('api/graph')
+    apiFetch('api/graph')
       .then((r) => r.json())
       .then(setGraph)
       .catch((e) => setError(String(e)))
@@ -84,7 +85,7 @@ export default function App() {
     setError(null)
     Promise.all(
       ['ledger', 'closure', 'coverage'].map((name) =>
-        fetch(`api/${name}?${query}`).then(async (r) => {
+        apiFetch(`api/${name}?${query}`).then(async (r) => {
           if (!r.ok) throw new Error(`${name}: ${(await r.json()).detail ?? r.status}`)
           return r.json()
         })
@@ -103,7 +104,7 @@ export default function App() {
   const openRecord = useCallback(
     (recordId) => {
       setSelected({ loading: true })
-      fetch(`api/records/${encodeURIComponent(recordId)}?${query}`)
+      apiFetch(`api/records/${encodeURIComponent(recordId)}?${query}`)
         .then((r) => r.json())
         .then(setSelected)
         .catch((e) => setSelected({ error: String(e) }))
@@ -111,11 +112,36 @@ export default function App() {
     [query]
   )
 
-  const exportUrl = useMemo(() => {
+  // A plain <a href> cannot carry an Authorization header, and /api/export
+  // now needs the EXPORTER role (P17) -- so the download is driven from
+  // here instead: fetch through apiFetch(), then hand the browser a
+  // blob URL to save exactly the way a direct link download would.
+  const exportQuery = useMemo(() => {
     const q = new URLSearchParams(query)
     q.delete('scenario')
-    return `api/export?${q.toString()}`
+    return q.toString()
   }, [query])
+
+  const [exporting, setExporting] = useState(false)
+  const runExport = useCallback(async () => {
+    setExporting(true)
+    setError(null)
+    try {
+      const r = await apiFetch(`api/export?${exportQuery}`)
+      if (!r.ok) throw new Error(`export: ${(await r.json()).detail ?? r.status}`)
+      const blob = await r.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'pramana-cbom.json'
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setError(String(e.message ?? e))
+    } finally {
+      setExporting(false)
+    }
+  }, [exportQuery])
 
   const scenario = meta?.scenarios?.find((s) => s.id === policy.scenario)
 
@@ -125,7 +151,8 @@ export default function App() {
         meta={meta}
         policy={policy}
         onChange={setPolicy}
-        exportUrl={exportUrl}
+        onExport={runExport}
+        exporting={exporting}
         scenario={scenario}
       />
 

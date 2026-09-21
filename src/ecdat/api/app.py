@@ -21,8 +21,9 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 
 from ecdat.adapters.base import ScanTarget
@@ -50,8 +51,11 @@ from ecdat.risk.scenarios import (
     Scenario,
 )
 from ecdat.risk.sensitivity import sensitivity_for
+from ecdat.security.audit import AuditLog, InMemoryAuditLog, Verb, entry_for
+from ecdat.security.auth import AuthError, InsufficientRoleError, Principal, Role, TokenRegistry
 
 SubjectsProvider = Callable[[], list[LedgerSubject]]
+_bearer_scheme = HTTPBearer(auto_error=False)
 
 #: The fixture the dashboard opens with when nothing else is configured.
 #: Clearly labelled in the UI as a fixture: it is constructed evidence, not a
@@ -294,6 +298,8 @@ def create_app(
     *,
     static_dir: Path | None = None,
     correlation_provider: CorrelationProvider | None = None,
+    token_registry: TokenRegistry | None = None,
+    audit_log: AuditLog | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="Pramana",
@@ -305,6 +311,47 @@ def create_app(
     #: adapter and the correlation engine, and (like DEFAULT_SUBJECTS) is
     #: fixture data, not a live scan.
     correlation_report = (correlation_provider or default_correlation_report)()
+
+    #: build-plan.md P17. Secure by default: no explicit registry and no
+    #: ECDAT_API_TOKENS means every request is refused until an operator
+    #: configures one. app.state carries both so a test or an operator can
+    #: introspect what got recorded without a second wiring path.
+    registry = token_registry or TokenRegistry.from_env()
+    audit = audit_log or InMemoryAuditLog()
+    app.state.token_registry = registry
+    app.state.audit_log = audit
+
+    def _require(role: Role, verb: Verb):
+        """One dependency factory used by every protected route. Every call
+        -- allowed or refused -- is audited (P17: "who read or exported
+        what", including who tried and was refused); a raw token is never
+        the thing that gets logged or compared, only its fingerprint
+        (security/auth.py)."""
+
+        def dependency(
+            request: Request,
+            credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+        ) -> Principal:
+            raw_token = credentials.credentials if credentials else None
+            principal: Principal | None = None
+            try:
+                principal = registry.authenticate(raw_token)
+                if not principal.can(role):
+                    raise InsufficientRoleError(required=role, actual=principal.role)
+            except AuthError as error:
+                audit.record(
+                    entry_for(
+                        principal, verb=verb, path=request.url.path, outcome=type(error).__name__
+                    )
+                )
+                raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+            audit.record(entry_for(principal, verb=verb, path=request.url.path, outcome="allowed"))
+            return principal
+
+        return dependency
+
+    require_viewer = _require(Role.VIEWER, Verb.READ)
+    require_exporter = _require(Role.EXPORTER, Verb.EXPORT)
 
     def run(
         scenario_id: str,
@@ -353,6 +400,7 @@ def create_app(
         accept_inferred: bool = Query(False),
         rollout_y_days: int = Query(..., ge=0),
         as_of: date | None = Query(None),
+        principal: Principal = Depends(require_viewer),
     ) -> dict[str, Any]:
         result = run(scenario, capture, since, accept_inferred, rollout_y_days, as_of)
         ordered = sorted(result.records, key=lambda r: rank_key(r))
@@ -376,6 +424,7 @@ def create_app(
         accept_inferred: bool = Query(False),
         rollout_y_days: int = Query(..., ge=0),
         as_of: date | None = Query(None),
+        principal: Principal = Depends(require_viewer),
     ) -> dict[str, Any]:
         result = run(scenario, capture, since, accept_inferred, rollout_y_days, as_of)
         for record in result.records:
@@ -391,6 +440,7 @@ def create_app(
         accept_inferred: bool = Query(False),
         rollout_y_days: int = Query(..., ge=0),
         as_of: date | None = Query(None),
+        principal: Principal = Depends(require_viewer),
     ) -> dict[str, Any]:
         result = run(scenario, capture, since, accept_inferred, rollout_y_days, as_of)
         return {
@@ -406,11 +456,12 @@ def create_app(
         accept_inferred: bool = Query(False),
         rollout_y_days: int = Query(..., ge=0),
         as_of: date | None = Query(None),
+        principal: Principal = Depends(require_viewer),
     ) -> dict[str, Any]:
         return _coverage(run(scenario, capture, since, accept_inferred, rollout_y_days, as_of))
 
     @app.get("/api/graph")
-    def graph() -> dict[str, Any]:
+    def graph(principal: Principal = Depends(require_viewer)) -> dict[str, Any]:
         """P15: the evidence graph view. `fixture` is always true today --
         `correlation_report` is `default_correlation_report()` unless a
         caller wires a real one in, exactly like `DEFAULT_SUBJECTS`."""
@@ -458,7 +509,7 @@ def create_app(
         }
 
     @app.get("/api/profiles")
-    def profiles() -> dict[str, Any]:
+    def profiles(principal: Principal = Depends(require_viewer)) -> dict[str, Any]:
         return {
             "profiles": [
                 {
@@ -474,7 +525,9 @@ def create_app(
         }
 
     @app.get("/api/recommendations")
-    def recommendations(profile: str | None = Query(None)) -> dict[str, Any]:
+    def recommendations(
+        profile: str | None = Query(None), principal: Principal = Depends(require_viewer)
+    ) -> dict[str, Any]:
         """Part 8. Keyed on purpose, so it needs no scenario and no Z date --
         what to move to does not depend on when Z is, only on what the key is
         doing."""
@@ -503,6 +556,7 @@ def create_app(
         accept_inferred: bool = Query(False),
         rollout_y_days: int = Query(..., ge=0),
         as_of: date | None = Query(None),
+        principal: Principal = Depends(require_exporter),
     ) -> JSONResponse:
         """Every scenario in one document (ADR-005 decision 2)."""
         records: list[CalculationRecord] = []

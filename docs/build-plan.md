@@ -425,17 +425,65 @@ exists in `data/`. Either vendor a citable latency measurement or say what is
 actually shown: *"with size, handshake-failure precedent and compatibility impact."*
 Inventing a latency number to match the slide is the one thing that must not happen.
 
-### P17 — RBAC and audit log
+### P17 — RBAC and audit log — **done (2026-09-21)**
 
-**Falls under:** ledger phase 7 (*dashboard*, built). The API exists and is
-unauthenticated.
+**Falls under:** ledger phase 7 (*dashboard*, built). The API existed and was
+unauthenticated; it is not any more.
 
 The deck answers "the inventory is itself a sensitive asset" with four controls.
-Three are real — on-prem, no key material stored (enforced by
-`security/secrets.py` and tested), and the network definition. The fourth is not
-started. Minimum honest scope: an authenticated API, roles that distinguish reading
-the ledger from changing a scenario or exporting, and an append-only log of who
-read or exported what. Export is the sensitive verb here, not scanning.
+Three were real before this phase — on-prem, no key material stored (enforced by
+`security/secrets.py` and tested), and the network definition (P18). The fourth is
+built now.
+
+**Built:** `security/auth.py` (`Role` -- closed two-value set, `VIEWER` and
+`EXPORTER`; `TokenRegistry`, secure by default -- `TokenRegistry.empty()` when
+`ECDAT_API_TOKENS` is unset, refusing every request rather than opening until an
+operator remembers to lock it down; tokens are looked up and logged only by their
+SHA-256 fingerprint, never as raw text) and `security/audit.py` (`Verb.READ` /
+`Verb.EXPORT`, `JsonlAuditLog` -- the same append-only, one-record-per-line shape
+`store/repository.py::JsonlRunStore` already uses -- and an `InMemoryAuditLog` for
+tests and the default app).
+
+Wired into `api/app.py::create_app()`: every `/api/ledger`, `/api/records/*`,
+`/api/closure`, `/api/coverage`, `/api/graph`, `/api/profiles`,
+`/api/recommendations` route requires `VIEWER`; `/api/export` requires
+`EXPORTER` -- "export is the sensitive verb here, not scanning" is not a slogan
+any more, it is a 403 a `VIEWER` token actually gets. `/api/health` and
+`/api/scenarios` stay open (load-balancer-probe / discovery endpoints, not
+ledger data). Every authenticated call is audited, **including refused ones** --
+"who tried and was refused" is part of "who read or exported what," not a fact
+this log gets to drop.
+
+**Dashboard**, not left broken by the change: `ui/dashboard/src/api.js` wraps
+every `fetch()` with an `Authorization: Bearer` header;
+`tools/dev/run_dashboard.py` sets one dev-only token (`EXPORTER`, so the single
+token drives every panel including the export button) before importing the app,
+clearly labelled as committed-in-plain-text and never fit for anything but a local
+preview. `/api/export`'s download moved from a plain `<a href>` (which cannot carry
+a header at all) to a `fetch` + blob-URL flow in `App.jsx`, so the download itself
+goes through the same authenticated path as everything else.
+
+**Verified live**, end to end, after finding and fixing a real caching bug in the
+preview tooling (it kept launching the *old* `python -m uvicorn
+ecdat.api.app:app --port 8000` command from a prior `.claude/launch.json`, silently
+ignoring the edit to run `tools/dev/run_dashboard.py` -- caught by checking the
+actual running process's command line, not assumed from a green browser tab):
+launched directly, then confirmed in the browser -- the ledger, closure queue,
+coverage and graph tabs all loaded real data, and clicking Export produced a real
+`200 OK` on `/api/export` and a saved `pramana-cbom.json`.
+
+Tests: `tests/unit/security/test_auth.py` (13), `tests/unit/security/test_audit.py`
+(6), and `tests/unit/api/test_app.py` extended with 8 RBAC/audit cases (a `VIEWER`
+token gets 403 on export, no token is 401, an unrecognised token is 401, health
+needs none, every allowed AND every refused request is audited, no audit entry
+ever contains a raw token). 543 tests pass, 1 skipped (the P18 no-egress
+integration test, correctly, on this host); `tools/ci/check_data_citations.py`
+still passes.
+
+**Confirms build-plan.md's own prediction:** "it changes nothing a judge can see"
+-- the dashboard looks identical; every panel still renders the same rows, bands
+and deadlines. What changed is that a request without the right token now gets
+refused and logged, instead of getting an answer.
 
 ### P18 — Make no-egress test-enforced — **done (2026-09-21)**
 

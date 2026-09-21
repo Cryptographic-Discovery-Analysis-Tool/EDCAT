@@ -4,7 +4,7 @@ import React from 'react'
 // not hidden behind a settings icon -- a tool whose answers depend on two
 // chosen assumptions has to show them being chosen.
 
-export default function Controls({ meta, policy, onChange, exportUrl, scenario }) {
+export default function Controls({ meta, policy, onChange, onExport, exporting, scenario }) {
   const set = (patch) => onChange({ ...policy, ...patch })
 
   return (
@@ -117,9 +117,9 @@ export default function Controls({ meta, policy, onChange, exportUrl, scenario }
         that nobody watched happen.
       </p>
 
-      <a href={exportUrl} download="pramana-cbom.json">
-        <button style={{ width: '100%' }}>Export CycloneDX 1.6</button>
-      </a>
+      <button style={{ width: '100%' }} onClick={onExport} disabled={exporting}>
+        {exporting ? 'Exporting…' : 'Export CycloneDX 1.6'}
+      </button>
       <p className="small muted">
         One file, all three Z dates. Schema-validated and scanned for key
         material before it is written.
