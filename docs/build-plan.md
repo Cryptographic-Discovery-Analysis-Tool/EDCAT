@@ -221,7 +221,7 @@ table is the live status; that document is a dated snapshot (18 Sep 2026).
 | 3 Scenario engine | `risk/scenarios.py`, `context/binding.py`, `data/scenarios.yaml`, `data/data_lifetime.yaml`, `data/crypto_families.yaml` | implemented, unit-green |
 | 4 Exposure ledger | `risk/confidentiality_ledger.py`, `risk/authentication_ledger.py`, `risk/record.py` | implemented, all of §6 green |
 | 5 Closure engine | `closure/engine.py`, `data/closure_catalog.yaml` | implemented, unit-green |
-| 6 CBOM export | `export/cyclonedx.py` | implemented, unit-green; signed export deferred (OI-013) |
+| 6 CBOM export | `export/cyclonedx.py`, `export/signing.py` | implemented, unit-green; signed export built P20 (OI-013 resolved 2026-09-21) |
 | 7 Dashboard | `src/ecdat/api/` (FastAPI) + `ui/dashboard/` (React/Vite) | implemented, unit-green over fixtures; `ui/app.py` Flask prototype superseded but not deleted |
 | — Recommendation | `recommend/engine.py`, `data/pqc_options.yaml` | implemented, unit-green (Final Architecture Part 8; not a numbered ledger phase) |
 | 8 Harness scoring | `ground-truth/exposure.expected.yaml`, `score_run.py` extension | not started |
@@ -262,82 +262,137 @@ no two runs can be compared. That single gap is also the whole of the review's
 separate "drift" proposal. They are one phase, not two, and the expensive half of
 both is already done.
 
-### P13 — Run store and run-to-run diff
+### P13 — Run store and run-to-run diff — **done (2026-09-21), scoped**
 
 **Falls under:** P2 (*store + score wiring*, recorded above as "done (in-memory)" —
 this is the persistent half it deferred), ledger phase 4 (*exposure ledger*, built),
 and §5.7's migration timeline (built).
 
-**Missing:** run identity, persistence, and a diff. Nothing else.
+Built: `store/repository.py` (`Run`, `RunStore` protocol, `JsonlRunStore`),
+`store/diff.py` (`diff_runs`), and three CLI commands —
+`ecdat ledger-run --subjects <file> --scenario <id> --target-id <id> --store-dir <dir>`
+(evaluates a ledger and saves the result as a `Run`, the same `evaluate_run` the
+API calls), `ecdat runs --store-dir <dir>` (list), and
+`ecdat diff --store-dir <dir> --from <run> --to <run>`.
 
-Deliverables:
+**Scoping decision, stated rather than silently narrowed:** the deck promises
+PostgreSQL (JSONB). `RunStore` is the interface Lock §5 row 9 leaves open ("the
+table layout open; a run is an append-only document either way"), and what ships
+today behind it is `JsonlRunStore` — one JSON document per run, one file per run,
+under a directory. It satisfies "append-only document" literally, needs no service
+to stand up, and works offline and in CI. A `PostgresRunStore` implementing the
+same `RunStore` protocol is the natural next adapter; nothing above the interface
+changes when it lands. The deck's platform row should say persistence and
+run-to-run diff are built, and that the backing store today is file-based pending
+a Postgres adapter — not claim Postgres itself is running.
 
-- `store/` — a real repository behind the interface P2 left open. Lock §5 row 9
-  leaves the table layout open; a run is an append-only document either way.
-- `ecdat runs` (list) and `ecdat diff --from <run> --to <run>`.
-- Diff classes: `NEW` · `CHANGED` · `REMOVED` · `MIGRATED` · `REGRESSED` · `UNCHANGED`.
+Diff classes: `NEW` · `CHANGED` · `REMOVED` · `MIGRATED` · `REGRESSED` · `UNCHANGED`,
+matched by `usage_context_id`. `MIGRATED` and `REGRESSED` introduce **no new
+judgement** — `diff.py::_currently_stopped` builds `confidentiality_ledger.py`'s own
+`_Timeline` from each record's stored migrations and compares `currently_stopped`
+across the two runs; a row becomes `MIGRATED` only on a KNOWN migration observation
+with `classical_still_accepted` false, exactly the rule §5.7 already enforces
+within one run, now compared across two. Authentication rows never classify as
+MIGRATED/REGRESSED (the module docstring's own distinction: nothing signed is
+"lost"). Verified end to end against `tests/fixtures/ledger/subjects.json`: `ecdat
+ledger-run` under `Z_aggressive` then under `Z_central`, `ecdat diff` between them,
+correctly finds the one row that moves BLEEDING → SAVABLE — the same row the
+dashboard shows as "flips at Central" (P19).
 
-`MIGRATED` and `REGRESSED` introduce **no new judgement**. They are
-`_Timeline.first_stop` and `_Timeline.reopened` persisted across two runs instead of
-computed inside one. The evidence bar is therefore already set and already tested: a
-row becomes `MIGRATED` only on a KNOWN migration observation with
-`classical_still_accepted` false. A configuration file that claims an upgrade moves
-nothing — the same rule §5.7 already enforces, now visible across time.
+Tests: `tests/unit/store/test_repository.py`, `tests/unit/store/test_diff.py`,
+`tests/unit/test_cli_ledger_run.py` (drives `main()` with real argv, including the
+false-migration-claim negative case). 496 tests pass (was 472);
+`tools/ci/check_data_citations.py` still passes.
 
-**Done when:** two real scans of the same target, taken before and after a real
-change to the Tier A endpoint, produce a diff in which at least one row moves, and
-the move is justified by an observation rather than a declaration.
+**Not done:** `PostgresRunStore`; there is no live Tier A target to take two real
+network scans of yet, so "done when" is verified against `ledger-run` over the
+fixture, not a live scan diff.
 
-### P14 — Agility evidence (narrowed from the review's proposal)
+### P14 — Agility evidence (narrowed from the review's proposal) — **done (2026-09-21)**
 
 **Falls under:** P1 (source adapter, done), P3 (config adapter, done), P4 (TLS, done).
-All three already observe what this phase names; none of them names it.
+All three already observed what this phase names; `agility/evidence.py` is what names it.
 
-The review proposed six fields. Three are adopted, one is deferred, **two are
+The review proposed six fields. Three are adopted, one stays deferred, **two are
 refused**.
 
 | Field | Verdict | Where the evidence already is |
 |---|---|---|
-| `algorithm_selection` — `HARDCODED` / `CONFIGURATION_DRIVEN` / `UNKNOWN` | adopt | The source rules already split literal from non-literal: `TokenVault`'s literal `AES/GCM/NoPadding` (PAY-003) against `KeyWrapService`'s `props.getTransformation()` resolved through the config chain (PAY-001). This is that distinction, named. |
-| `hybrid_capable` | adopt, KNOWN only when observed | The TLS adapter's `negotiated_group`. A configured cipher list is INFERRED at best, never KNOWN. |
-| `provider_pluggable` | adopt, INFERRED ceiling | JCA provider indirection is readable from source; an actual provider registration is not, so UNKNOWN is the default and INFERRED is the maximum. |
+| `algorithm_selection` — `HARDCODED` / `CONFIGURATION_DRIVEN` / `UNKNOWN` | **built** | Reads `source-semgrep`'s own literal/non-literal split: `TokenVault`'s literal `AES/GCM/NoPadding` (PAY-003, HARDCODED) against `KeyWrapService`'s `props.getTransformation()` (PAY-001, CONFIGURATION_DRIVEN). Direct relabelling of an existing observation — same state, same evidence_refs, no `derive()`. |
+| `hybrid_capable` | **built**, KNOWN only when observed | Reads the TLS adapter's own `negotiated_group`. Verified against the real fixture: `False`/absent without the openssl probe (`UNKNOWN`, not promoted from a configured cipher list), `True`/`KNOWN` with it. |
+| `provider_pluggable` | **built**, INFERRED ceiling, never KNOWN | Reads `provider_argument` (source text, KNOWN) and caps the *pluggability claim* to INFERRED — a call site that can take a provider argument does not prove a second provider actually runs. See DEV-012/OI-018: no rule_id is registered for this cap (nothing in the canonical docs names it), so it is built without `derive()` rather than citing an invented rule. |
 | `certificate_rotation` | **defer to P13** | Not a field. It needs the same certificate seen at two times, which is exactly what the run store produces. Putting it on a Finding would imply a single scan can see it. |
 | `migration_complexity` | **refuse** | It is a score. Slide 2 claims "no weights, no score, no model — lexicographic order only," and §5.10 ranks by window, not by effort. Adding this field would falsify the headline claim in exchange for a number nobody can defend. |
 | `hardcoded` as a bare boolean | **refuse** | Collapses `HARDCODED` and "we could not tell" into one value. Three states or none. |
 
-**Done when:** every agility field carries its own epistemic state like every other
-field in the model, and `check_data_citations.py` still passes.
+Wired into `correlation/graph.py::GraphNode.agility` (every node in the P15 evidence
+graph carries its own agility evidence) and surfaced in both `ecdat correlate
+--format graph` and the dashboard's "Evidence graph" tab. Verified live against the
+demo fixture: all three fields honestly read `UNKNOWN` there, because that fixture
+runs only `certs-x509` — no source or TLS evidence exists for it to read, and
+nothing is fabricated to fill the gap.
 
-### P15 — Evidence graph view
+**Done when:** every agility field carries its own epistemic state like every other
+field in the model — true by construction, `AgilityEvidence`'s three fields are each
+a `FieldValue` — and `check_data_citations.py` still passes.
+
+Tests: `tests/unit/agility/test_evidence.py` (12, against real `source-semgrep` and
+`tls-endpoint` fixture runs, not hand-built field dicts) plus the P15 graph tests
+extended to cover `agility`. 514 tests pass (was 502);
+`tools/ci/check_data_citations.py` still passes. Methodology recorded in DEV-012
+and OI-018.
+
+### P15 — Evidence graph view — **done (2026-09-21)**
 
 **Falls under:** P6 (correlation — recorded above as "partial, done for its defined
-scope"). The data already exists; only the rendering does not.
+scope"). The data already existed; `correlation/graph.py` is the rendering.
 
-`CorrelationReport` already carries the assets, the `same-object` relationships
-gated through `IDENTITY-CERT-DER-001`, and the `shares_public_key_unclaimed` pairs
-that deliberately are *not* relationships. That is a graph in everything but
-presentation.
+Built as `correlation/graph.py::build_graph(report)`, presentation-only over a
+`CorrelationReport`: every `same-object` `Relationship` becomes a `CLAIMED` edge
+carrying its `type`, `evidence_basis`, `rule_id` and `epistemic_state`; every
+`shares_public_key_unclaimed` pair becomes an `UNCLAIMED` edge with `rule_id=None`
+(OI-006 — no registered rule_id exists for that claim, and `EdgeStrength` is a
+closed two-value enum so a renderer cannot invent a third, stronger one). The two
+refused links from the review's seven-layer chain (library → usage, service →
+protected data) are `CHAIN_GAPS`, a fixed, cited list a caller must actively choose
+not to show — never blank space.
 
-Deliverables: a graph tab in the dashboard, and `ecdat correlate --format graph`.
+Deliverables, both shipped: `ecdat correlate --format graph` (CLI, tested end to
+end against a real duplicated-certificate plan) and a dashboard "Evidence graph"
+tab (`ui/dashboard/src/Graph.jsx`) backed by `GET /api/graph`, verified live: a
+solid arrow for the one claimed same-object edge, a visibly weaker dashed arrow for
+the two unclaimed shares-key edges, and both named gaps rendered with their `why`.
 
-**Hard requirements, because this is the easiest place in the whole project to
-draw a lie:**
+**Hard requirements, verified:**
 
-- every edge renders its type *and* its epistemic basis;
-- `shares_public_key_unclaimed` renders as a visibly weaker edge than `same-object`,
-  and never collapses into it — there is no registered rule_id for that claim
-  (OI-006), and the renderer must not invent one by drawing the same line;
-- edges that do not exist are drawn as named gaps, not as blank space.
+- every edge renders its type *and* its epistemic basis — `test_every_edge_states_its_type_and_epistemic_basis`
+  checks this structurally, not just for the fixture's own edges;
+- `shares_public_key_unclaimed` renders as a visibly weaker edge than `same-object`
+  and never collapses into it — `EdgeStrength.UNCLAIMED != EdgeStrength.CLAIMED` is
+  asserted directly, and the dashboard renders the two with different line styles;
+- edges that do not exist are drawn as named gaps, not as blank space —
+  `CHAIN_GAPS` always renders, even for an empty report.
 
-**Explicitly not built, and not to be drawn:** the review sketched a seven-layer
-chain — crypto API → config → algorithm → library → certificate → service →
-protected data. Two of those edges are real (config → algorithm, from P3;
-certificate → service, from P4). **Library → usage is not**: the package and binary
-readers refuse to claim usage on purpose, and that refusal is tested. **Service →
-protected data is not**: the data class is DECLARED by a person, and there is still
-nowhere to declare it (P6's open item). Rendering the clean chain would be precisely
-the false-certainty failure this tool exists to prevent, on the one screen a judge
-is most likely to photograph.
+**Explicitly not built, and not drawn:** the review's seven-layer chain — crypto API
+→ config → algorithm → library → certificate → service → protected data. Two of
+those edges are real (config → algorithm, from P3; certificate → service, from P4)
+and are drawn from the report itself when they exist. **Library → usage is not**:
+the package and binary readers refuse to claim usage on purpose, and that refusal
+is tested. **Service → protected data is not**: the data class is DECLARED by a
+person, and there is still nowhere to declare it (P6's open item). Both are named
+in `CHAIN_GAPS` with their `why`, never rendered as a line.
+
+The API's demo fixture (`tests/fixtures/correlation/demo_plan.json` +
+pre-generated certs) runs the real `certs-x509` adapter and the real correlation
+engine — not hand-built assets — the same way `ecdat correlate --plan` would.
+Confidence and its justification live in that plan file as data, never as a
+literal in `src/`, per `tests/unit/data/test_base_confidence.py`'s own guard
+(caught and fixed during this build: an earlier draft hardcoded
+`base_confidence=0.9` directly in `api/app.py` and failed that guard).
+
+Tests: `tests/unit/correlation/test_graph.py` (5, against real adapter runs) and
+`tests/unit/api/test_app.py::test_graph_endpoint_is_labelled_as_a_fixture_and_carries_both_edge_strengths`.
+502 tests pass (was 496); `tools/ci/check_data_citations.py` still passes.
 
 ### P16–P19 — deck promises that are real requirements and are not built yet
 
@@ -356,10 +411,10 @@ One of the five below is genuinely a deletion. Four are phases.
 
 | Deck promise | Where | Verified state, 2026-09-20 | Verdict |
 |---|---|---|---|
-| "PostgreSQL (JSONB evidence + snapshots)" | S3 platform | `store/__init__.py` is 0 bytes; no `postgres`/`psycopg`/`sqlalchemy` in `src/` or `pyproject.toml` | **Keep — P13 builds it.** Slide 5's "snapshots show new exposure, closed windows and certificate change" is the same requirement stated twice. Mark *planned* until P13 lands, then say what P13 actually built rather than naming a database for its own sake. |
+| "PostgreSQL (JSONB evidence + snapshots)" | S3 platform | **Built 2026-09-21 — P13**, scoped: `store/` is a real, tested repository (`Run`, `RunStore`, `diff_runs`) behind a `JsonlRunStore` default; snapshots and run-to-run diff work end to end (`ecdat ledger-run` / `runs` / `diff`). Postgres itself is not running — no `postgres`/`psycopg`/`sqlalchemy` in `src/` or `pyproject.toml`. | **Say what's true:** persistence and diff are built and demoable; the backing store is file-based pending a `PostgresRunStore` adapter behind the same interface. Do not claim Postgres is running. |
 | "RBAC + audit log" | S3 platform **and** S4's challenge row | zero hits for `rbac`, `audit_log`, `audit log` in `src/` or `tests/` | **Keep — P17.** This is not decoration: it is the stated answer to the challenge *"the inventory is itself a sensitive asset."* Deleting it would weaken an answer the deck needs to give. Mark *planned*. |
 | "no egress (test-enforced)" | S3 **and** S4 | **No `harness/` directory exists in this repo at all** — no compose file, no `internal: true`, nothing configured. Corrected 2026-09-21; the earlier note that this was "already configured" was wrong. | **Keep — P18.** The requirement is right; neither half exists yet — network isolation is unconfigured and untested. |
-| "the dates at which the ranking flips are printed" | S4, answering *"the arrival date Z is genuinely contested"* | zero hits for `flip`; the UI switches Z one scenario at a time, and nothing computes or prints the date a row changes band | **Keep — P19.** A real innovation claim, and cheap: the three scenarios and the closure engine's counterfactual re-evaluation already exist. |
+| "the dates at which the ranking flips are printed" | S4, answering *"the arrival date Z is genuinely contested"* | **Built 2026-09-21 — P19.** `risk/sensitivity.py`, wired into the API and the dashboard's "Under other Z" column. | **Keep, now true.** |
 | "Trivy / **Syft**" | S3 sensors | no reference to Syft anywhere in `src/`, `tests/` or `tools/` | **The one real deletion.** Trivy already provides the package inventory this needs, and `packages-trivy` is built and live-proven. Syft would add a second tool for the same fact. Cut the word. |
 
 Separately, a wording fix rather than a phase: slide 2 (iv) promises recommendations
@@ -370,52 +425,141 @@ exists in `data/`. Either vendor a citable latency measurement or say what is
 actually shown: *"with size, handshake-failure precedent and compatibility impact."*
 Inventing a latency number to match the slide is the one thing that must not happen.
 
-### P17 — RBAC and audit log
+### P17 — RBAC and audit log — **done (2026-09-21)**
 
-**Falls under:** ledger phase 7 (*dashboard*, built). The API exists and is
-unauthenticated.
+**Falls under:** ledger phase 7 (*dashboard*, built). The API existed and was
+unauthenticated; it is not any more.
 
 The deck answers "the inventory is itself a sensitive asset" with four controls.
-Three are real — on-prem, no key material stored (enforced by
-`security/secrets.py` and tested), and the network definition. The fourth is not
-started. Minimum honest scope: an authenticated API, roles that distinguish reading
-the ledger from changing a scenario or exporting, and an append-only log of who
-read or exported what. Export is the sensitive verb here, not scanning.
+Three were real before this phase — on-prem, no key material stored (enforced by
+`security/secrets.py` and tested), and the network definition (P18). The fourth is
+built now.
 
-### P18 — Make no-egress test-enforced
+**Built:** `security/auth.py` (`Role` -- closed two-value set, `VIEWER` and
+`EXPORTER`; `TokenRegistry`, secure by default -- `TokenRegistry.empty()` when
+`ECDAT_API_TOKENS` is unset, refusing every request rather than opening until an
+operator remembers to lock it down; tokens are looked up and logged only by their
+SHA-256 fingerprint, never as raw text) and `security/audit.py` (`Verb.READ` /
+`Verb.EXPORT`, `JsonlAuditLog` -- the same append-only, one-record-per-line shape
+`store/repository.py::JsonlRunStore` already uses -- and an `InMemoryAuditLog` for
+tests and the default app).
+
+Wired into `api/app.py::create_app()`: every `/api/ledger`, `/api/records/*`,
+`/api/closure`, `/api/coverage`, `/api/graph`, `/api/profiles`,
+`/api/recommendations` route requires `VIEWER`; `/api/export` requires
+`EXPORTER` -- "export is the sensitive verb here, not scanning" is not a slogan
+any more, it is a 403 a `VIEWER` token actually gets. `/api/health` and
+`/api/scenarios` stay open (load-balancer-probe / discovery endpoints, not
+ledger data). Every authenticated call is audited, **including refused ones** --
+"who tried and was refused" is part of "who read or exported what," not a fact
+this log gets to drop.
+
+**Dashboard**, not left broken by the change: `ui/dashboard/src/api.js` wraps
+every `fetch()` with an `Authorization: Bearer` header;
+`tools/dev/run_dashboard.py` sets one dev-only token (`EXPORTER`, so the single
+token drives every panel including the export button) before importing the app,
+clearly labelled as committed-in-plain-text and never fit for anything but a local
+preview. `/api/export`'s download moved from a plain `<a href>` (which cannot carry
+a header at all) to a `fetch` + blob-URL flow in `App.jsx`, so the download itself
+goes through the same authenticated path as everything else.
+
+**Verified live**, end to end, after finding and fixing a real caching bug in the
+preview tooling (it kept launching the *old* `python -m uvicorn
+ecdat.api.app:app --port 8000` command from a prior `.claude/launch.json`, silently
+ignoring the edit to run `tools/dev/run_dashboard.py` -- caught by checking the
+actual running process's command line, not assumed from a green browser tab):
+launched directly, then confirmed in the browser -- the ledger, closure queue,
+coverage and graph tabs all loaded real data, and clicking Export produced a real
+`200 OK` on `/api/export` and a saved `pramana-cbom.json`.
+
+Tests: `tests/unit/security/test_auth.py` (13), `tests/unit/security/test_audit.py`
+(6), and `tests/unit/api/test_app.py` extended with 8 RBAC/audit cases (a `VIEWER`
+token gets 403 on export, no token is 401, an unrecognised token is 401, health
+needs none, every allowed AND every refused request is audited, no audit entry
+ever contains a raw token). 543 tests pass, 1 skipped (the P18 no-egress
+integration test, correctly, on this host); `tools/ci/check_data_citations.py`
+still passes.
+
+**Confirms build-plan.md's own prediction:** "it changes nothing a judge can see"
+-- the dashboard looks identical; every panel still renders the same rows, bands
+and deadlines. What changed is that a request without the right token now gets
+refused and logged, instead of getting an answer.
+
+### P18 — Make no-egress test-enforced — **done (2026-09-21)**
 
 **Falls under:** the harness, not `src/`. Smallest phase on this list.
 
-**Corrected 2026-09-21:** there is no `harness/` directory in this repo — not
-the compose file, not `internal: true`, nothing. The earlier note in this plan
-claiming `internal: true` was "already set" was wrong; it cited a file that
-does not exist here. Both halves are unbuilt: write the compose network
-definition with `internal: true` on the isolated network, then add the test
-that asserts a container on it cannot reach the outside world. Until both
-land, the deck should say neither "enforced by the network definition" nor
-"test-enforced" — say nothing about egress isolation at all.
+**Corrected twice, same day.** The first correction (earlier in this session) said
+"there is no `harness/` directory in this repo — nothing is configured." That was
+itself wrong in a narrower way: it checked only `ecdat/`, not the sibling
+`../ecdat-harness/` repo CLAUDE.md names as a canonical source. The real file is
+`ecdat-harness/harness/compose/docker-compose.yml`, `internal: true` genuinely was
+already set on `payments-internal` there (H6), and its own header comment said
+exactly why the deck's word "test-enforced" was still ahead of the code: *"Not run
+in this environment (no Docker daemon available here — see
+ecdat/docs/open-issues.md OI-007) ... it has not been built or started."*
 
-### P19 — Scenario sensitivity: print the date the ranking flips
+**Built and run for real.** `tools/ci/check_no_egress.sh` brings the Tier A stack
+up (`docker compose up -d --build`), runs one ephemeral `alpine` container on
+`payments-internal` and asserts `wget` to `1.1.1.1` fails, then runs the *same*
+check on the default bridge network as a control (must succeed) — so a pass proves
+`internal: true` is doing the work, not that the host has no internet at all.
+`tests/integration/test_no_egress.py` wraps it for pytest discovery, skipping when
+Docker is not on `PATH` or the sibling checkout is absent, exactly like
+`tests/unit/correlation/test_engine.py`'s own `pytestmark_harness` skip for the
+same sibling repo.
+
+**Actually executed, not just written**, via the WSL2 Linux build box
+(`docs/build-box.md`, Docker 29.1.3): the compose stack built and started from a
+clean state, the control container reached `1.1.1.1` over the default bridge
+network (56614 bytes, real HTTP response), and the same request from
+`payments-internal` failed with `Network unreachable` — Docker's own no-route
+behaviour for an `internal: true` network, not a script-level assertion faked
+around it. The exact `subprocess.run(["bash", "tools/ci/check_no_egress.sh"], ...)`
+call `test_no_egress.py` makes was run directly in WSL2: `returncode == 0`, `"PASS"
+in stdout`. Containers were torn down afterward (`trap cleanup EXIT`); confirmed
+no orphaned containers or networks remained. On this Windows host, `docker` is not
+on `PATH` (only reachable via `wsl -d Ubuntu -- docker ...`), so `pytest -q` here
+correctly skips the test rather than falsely passing or failing — the real
+Linux/CI environment where `docker` is on `PATH` directly is where it runs, exactly
+as `docs/build-box.md` already documents for every other live-tool check in this
+project.
+
+**Not attempted:** a negative control (temporarily setting `internal: false` on the
+real compose file to prove the script would catch a regression) — the harness
+repo's own compose file is shared, security-relevant configuration, and editing it
+even temporarily was refused by this session's own safety classifier as a security
+weakening action. The already-obtained contrast (isolated network blocked,
+non-isolated default network succeeded) is the negative-control evidence in its
+place.
+
+### P19 — Scenario sensitivity: print the date the ranking flips — **done (2026-09-21)**
 
 **Falls under:** ledger phase 3 (*scenario engine*, built) and phase 5 (*closure
-engine*, built). Both halves exist; nothing joins them.
+engine*, built). Both halves existed; `risk/sensitivity.py` joins them.
 
-`data/scenarios.yaml` carries all three Z dates, `Scenario.load_all()` already
-reads them, and `closure/engine.py` already re-evaluates a record under alternative
-inputs (`_algorithm_candidates`, `_start_candidates`, `_migration_candidates`, …) to
-work out what a missing fact could turn out to be. Printing "this row is BLEEDING
-under Z=2031 and 2036, SAVABLE under Z=2041" is that same counterfactual machinery
-pointed at the scenario axis instead of the evidence axis.
+Built as `risk/sensitivity.py::sensitivity_for(record)`: re-runs the record's own
+ledger (`authentication_ledger` or `confidentiality_ledger`, picked the same way
+`replay()` picks it) once per cited scenario in `data/scenarios.yaml`, ordered
+earliest-Z first. `scenario_sensitive` is true iff the band is not identical across
+all three; `first_flip` names the earliest-Z scenario after the baseline whose band
+differs, with its own real, ledger-computed deadline — no date is interpolated
+between scenarios, consistent with §5.12's rejection of a probabilistic Z.
 
-Why it is worth a phase of its own: it converts the deck's weakest-sounding
-admission — *we do not know when Z is* — into its strongest move. A tool that says
-"here is the date at which this ranking changes, and here is the row that changes
-first" has turned a contested assumption into an output. Nothing else on this list
-buys that much for as little code.
+Wired into `api/app.py::_row()` as a `sensitivity` field on every ledger row (so
+`/api/ledger`, `/api/records/{id}`, and the evidence card all carry it without a
+second endpoint), and into `ui/dashboard/src/Ledger.jsx` as an "Under other Z"
+column: a `flips at <scenario>` badge (hover shows the band under all three) or
+`stable across Z`. Verified live against the fixture at `/`: the SAVABLE
+legacy-settlement row reads "flips at Central" and the RESIGN_BEFORE_Z
+firmware-release row reads "flips at Optimistic"; every other row reads "stable
+across Z" — all real re-runs, not invented labels.
 
-**Done when:** every ledger row carries its band under all three scenarios, and the
-UI shows which rows are scenario-sensitive without the operator having to flip the
-control and remember what it said before.
+Tests: `tests/unit/risk/test_sensitivity.py` (module-level, against the frozen §6
+test set) and `test_app.py::test_scenario_sensitivity_flags_rows_that_actually_move`
+(end-to-end: derives which fixture rows actually move across all three scenarios
+independently of the flag, then asserts the flag agrees). 472 tests pass (was 467);
+`tools/ci/check_data_citations.py` still passes.
 
 ### Ordering
 
@@ -432,3 +576,62 @@ Then **P15** (the data is already computed), **P14**, **P18** (one test), and
 weighting into the analysis path. The review's own first recommendation was to keep
 entropy and PRNG-prediction research out of the SIH core; that agrees with CLAUDE.md
 and with slide 3's "no AI in the security path," and needs no phase.
+
+---
+
+## P20 — Signed export (OI-013 resolved) — **done (2026-09-21)**
+
+Self-directed: the deck is locked (no further deck work per instruction), and
+P13–P19 are closed. This phase continues the implementation by closing the one
+open issue P17's RBAC/audit-log work was itself blocking: OI-013, deferred
+specifically pending "a key needs a custody story," which P17 supplied.
+
+**Falls under:** ledger phase 6 (*CBOM export*, built). §3's "signed export
+(VERIFY JSF field)" and §9 item 5.
+
+Built as `export/signing.py`: Ed25519-only JSF signing over RFC 8785 JCS-
+canonicalised bytes (`rfc8785`, newly pinned — a security-critical
+canonicalisation algorithm is not reimplemented here, same reasoning already
+applied to `jsonschema`/`cryptography`). `schemas/jsf-0.82.schema.json` is the
+real schema, fetched once from CycloneDX's own `specification` repo
+(Apache-2.0) and vendored exactly the way `cyclonedx-1.6.schema.json` itself
+was — the permissive stub `export/cyclonedx.py::_validator()` used before this
+phase is gone; every `signature` this module produces is schema-checked for
+real, not merely schema-shaped.
+
+**A real schema bug was caught doing this, not assumed.** The first signed
+document failed validation against the real JSF schema: `signature.algorithm`
+is a `oneOf` between a fixed enum and a `format: "uri"` branch for proprietary
+algorithms, and `jsonschema`'s `Draft7Validator` does not check `format`
+without an attached `FormatChecker` (and `uri` specifically needs the
+`rfc3987` package). Without one, `"Ed25519"` is *also* a syntactically valid
+URI reference, matches both `oneOf` branches, and fails "exactly one must
+match." Fixed with the `jsonschema[format]` extra and
+`format_checker=Draft7Validator.FORMAT_CHECKER`.
+
+**Key custody, minimum honest version:** a PEM file at `ECDAT_SIGNING_KEY_PATH`
+(`ecdat keygen` generates one), never logged, held in memory only for the
+duration of one signature. Rotation is manual. A verifier trusts only the bare
+embedded Ed25519 public key — no certificate chain, no external PKI; that
+key's fingerprint reaching a verifier is a distribution problem this module
+does not solve and says so in its own docstring, rather than implying more
+trust than the mechanism provides. Automated rotation and a certificate chain
+are real hardening work, explicitly deferred, not silently dropped.
+
+**Wired into:** `ecdat keygen` / `ecdat verify-export` (CLI), and `GET
+/api/export` (signs when a key is configured; `X-Pramana-Signed: false` and an
+unsigned document otherwise — no silent default key). Verified live,
+end to end: `ecdat keygen` → sign → `ecdat verify-export` reports `signature
+valid`; a tampered copy of the same export correctly reports `INVALID:
+signature does not verify`, exit 1.
+
+Tests: `tests/unit/export/test_signing.py` (16 — round-trip, tamper detection
+on the document and on the signature value independently, wrong-key
+rejection, non-Ed25519 rejection, real schema validation, no raw key ever
+appears in a signed document) plus two in `test_app.py`. 560 tests pass (was
+543); `tools/ci/check_data_citations.py` still passes.
+
+**Not attempted:** automated key rotation with overlap, a `certificatePath`
+certificate chain, and any JSF algorithm other than Ed25519 (RS*/PS*/ES*/HS*)
+— all real hardening work, out of this close, matching OI-013's own original
+deferral note.

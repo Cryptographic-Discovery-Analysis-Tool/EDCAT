@@ -4,7 +4,7 @@
     {
       "name": "pramana",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "uvicorn", "ecdat.api.app:app", "--port", "8000"],
+      "runtimeArgs": ["tools/dev/run_dashboard.py"],
       "port": 8000
     },
     {

@@ -57,9 +57,16 @@ class SchemaValidationError(ValueError):
 # --- schema validation ------------------------------------------------------
 
 
+_JSF_SCHEMA_FILE = "jsf-0.82.schema.json"
+
+
 def _schema_path() -> Path:
     # src/ecdat/export/cyclonedx.py -> repository root -> schemas/
     return Path(__file__).resolve().parents[3] / "schemas" / _SCHEMA_FILE
+
+
+def _jsf_schema_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "schemas" / _JSF_SCHEMA_FILE
 
 
 @lru_cache(maxsize=1)
@@ -67,15 +74,26 @@ def _validator() -> Draft7Validator:
     """A validator that cannot reach the network.
 
     The 1.6 schema references two external documents, `spdx.schema.json` (SPDX
-    licence expressions) and `jsf-0.82.schema.json` (signatures). Neither is
-    bundled and neither may be fetched -- the delivery target is an air-gapped
+    licence expressions) and `jsf-0.82.schema.json` (signatures). Neither may
+    be fetched at validation time -- the delivery target is an air-gapped
     network, and a validator that silently reaches for the internet is a
-    finding in its own right. Both are mapped to permissive stubs. We emit no
-    `licenses` and no `signature`, so nothing we produce is validated by
-    either; a document that uses them passes those subtrees unchecked, which
-    is recorded here rather than hidden.
+    finding in its own right.
+
+    `jsf-0.82.schema.json` is the real, fetched schema (CycloneDX's own
+    `specification` repo, Apache-2.0), vendored here the same way
+    `cyclonedx-1.6.schema.json` itself was -- fetched once during
+    development, shipped, never fetched again at runtime. OI-013's
+    `export/signing.py` now emits real `signature` blocks, and this
+    validator checks them for real (see `test_signing.py`'s
+    `test_signed_document_validates_against_the_real_jsf_schema`).
+
+    `spdx.schema.json` (licence expressions) stays a permissive stub: this
+    project emits no `licenses` field, so nothing here is validated by it and
+    fetching a schema for a field we never use would be work with no
+    corresponding test to prove it is right.
     """
     schema = json.loads(_schema_path().read_text(encoding="utf-8"))
+    jsf_schema = json.loads(_jsf_schema_path().read_text(encoding="utf-8"))
     base = schema.get("$id", "")
     registry = Registry().with_resources(
         [
@@ -85,13 +103,16 @@ def _validator() -> Draft7Validator:
             ),
             (
                 urljoin(base, "jsf-0.82.schema.json"),
-                Resource.from_contents(
-                    {"definitions": {"signature": {}}}, default_specification=DRAFT7
-                ),
+                Resource.from_contents(jsf_schema, default_specification=DRAFT7),
             ),
         ]
     )
-    return Draft7Validator(schema, registry=registry)
+    # format_checker: without it, "format": "uri" is annotation-only and
+    # never actually checked, which makes JSF's signature.algorithm oneOf
+    # (an enum branch vs. a "proprietary algorithm as a URI" branch)
+    # genuinely ambiguous -- see pyproject.toml's comment on the
+    # jsonschema[format] extra this requires.
+    return Draft7Validator(schema, registry=registry, format_checker=Draft7Validator.FORMAT_CHECKER)
 
 
 def validate(document: dict[str, Any]) -> None:

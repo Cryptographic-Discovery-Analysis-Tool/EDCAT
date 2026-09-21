@@ -231,3 +231,43 @@ implementation rather than documentation: LocalStack's `latest` image tag now re
 all without a paid auth token (`License activation failed`, exit 55) — recorded in the fixture
 README as a fact about the image at time of recording, and `:3.0` used instead as the last tag
 confirmed to run the free/community KMS emulation.
+
+## DEV-012 — P14's agility fields built without new rule_ids (2026-09-21)
+
+**Issue.** `docs/build-plan.md` P14 adopts three agility fields (`algorithm_selection`,
+`hybrid_capable`, `provider_pluggable`) narrowed from an outside review's proposal. None of the
+three appears anywhere in the canonical architecture docs (`grep -rn "algorithm_selection\|
+hybrid_capable\|provider_pluggable" docs/architecture/` returns nothing) — they are new,
+build-plan-level work, not spec-named concepts. CLAUDE.md's anti-hallucination rule forbids
+adding a `rule_id` to `src/ecdat/rules/registry.py` "from memory": every entry there must cite a
+literal Lock or harness §14–16 section, and none names these three fields, so no citable
+`rule_id` exists for them.
+
+**Resolution.** `src/ecdat/agility/evidence.py` builds all three without `model.field_value
+.derive()` and without setting `derived_from` on the resulting `FieldValue`, so `FieldValue`'s
+own validator (`derived_from` set requires `rule_id`) is never in a position to need one:
+
+- `algorithm_selection` and `hybrid_capable` are **relabellings**, not new inferences: each reads
+  one existing source-adapter field (`algorithm_literal_at_call_site` / `algorithm_argument` from
+  `source-semgrep`; `negotiated_group` from `tls-endpoint`) and names its already-observed state
+  under a new enum value, copying that field's `state` and `evidence_refs` verbatim. No new
+  epistemic content is introduced, so no rule governs the mapping — the same principle
+  `model/temporal.py`'s `_earliest()` already applies to `possible_since` (a `min()` selection is
+  not a derivation).
+- `provider_pluggable` **is** a genuine epistemic downgrade: `source-semgrep`'s
+  `provider_argument` is `KNOWN` (the source text literally names a provider argument at that
+  call site), but the claim "this key's provider is pluggable" is weaker than what was observed
+  — a call site that *can* take a provider argument is not proof that a second, actual provider is
+  registered and reachable at runtime (the field's own module comment: "whether that is the
+  provider that executes is a different question this surface cannot answer"). The result is
+  capped to `INFERRED` directly (never `KNOWN`, matching build-plan.md P14's own text: "INFERRED
+  ceiling"), with `evidence_refs` still copied from the source field so the claim remains
+  traceable, but `derived_from` is left empty rather than cited against an invented `rule_id`.
+
+**Impact.** All three agility fields are fully traceable to their source evidence
+(`evidence_refs` never dropped) and replay identically (pure functions of `CryptoAsset.fields`,
+no clock, no randomness), but they are not currently checkable by `model.field_value.derive()`'s
+own R-DERIVE enforcement path the way a registered-rule_id derivation is. If build-plan.md P14's
+work is later folded into a canonical architecture doc with a named rule for
+`provider_pluggable`'s downgrade, register that rule_id in `rules/registry.py` and route
+`provider_pluggable` through `derive()` at that point — filed as OI-018 alongside this entry.

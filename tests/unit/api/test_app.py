@@ -8,14 +8,46 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ecdat.api.app import DEFAULT_SUBJECTS, create_app, load_subjects
+from ecdat.security.audit import InMemoryAuditLog
+from ecdat.security.auth import Role, TokenRegistry
 
 AS_OF = "2026-09-18"
 BASE = {"rollout_y_days": 365, "as_of": AS_OF}
 
+#: build-plan.md P17. Test-only tokens, never logged and never compared
+#: against a real one -- security/auth.py stores and compares only their
+#: fingerprint, so these two strings exist nowhere but this file and the
+#: in-memory registry a test app is built with.
+VIEWER_TOKEN = "test-viewer-token"
+EXPORTER_TOKEN = "test-exporter-token"
+
 
 @pytest.fixture(scope="module")
-def client():
-    return TestClient(create_app())
+def audit_log():
+    return InMemoryAuditLog()
+
+
+@pytest.fixture(scope="module")
+def app(audit_log):
+    registry = TokenRegistry.from_raw_tokens(
+        {VIEWER_TOKEN: Role.VIEWER, EXPORTER_TOKEN: Role.EXPORTER}
+    )
+    return create_app(token_registry=registry, audit_log=audit_log)
+
+
+@pytest.fixture(scope="module")
+def client(app):
+    return TestClient(app, headers={"Authorization": f"Bearer {VIEWER_TOKEN}"})
+
+
+@pytest.fixture(scope="module")
+def export_client(app):
+    return TestClient(app, headers={"Authorization": f"Bearer {EXPORTER_TOKEN}"})
+
+
+@pytest.fixture
+def anonymous_client(app):
+    return TestClient(app)
 
 
 def q(**kw):
@@ -107,6 +139,41 @@ def test_changing_the_scenario_moves_bands(client):
         if by_id[r["usage_context_id"]] != r["band"]
     }
     assert moved, "no row changed band between Z dates"
+
+
+def test_scenario_sensitivity_flags_rows_that_actually_move(client):
+    """P19: every row carries its band under all three cited Z dates, and the
+    rows this test just proved move between scenarios must be the ones marked
+    scenario_sensitive -- not a separately-invented flag."""
+    by_scenario = {
+        scenario: {
+            r["usage_context_id"]: r["band"]
+            for r in client.get("/api/ledger", params=q(scenario=scenario)).json()["rows"]
+        }
+        for scenario in ("Z_aggressive", "Z_central", "Z_optimistic")
+    }
+    central = client.get("/api/ledger", params=q(scenario="Z_central")).json()["rows"]
+
+    moved = {
+        uid
+        for uid in by_scenario["Z_central"]
+        if len({bands[uid] for bands in by_scenario.values()}) > 1
+    }
+    assert moved
+
+    for row in central:
+        sensitivity = row["sensitivity"]
+        assert {o["scenario_id"] for o in sensitivity["under_scenario"]} == {
+            "Z_aggressive",
+            "Z_central",
+            "Z_optimistic",
+        }
+        if row["usage_context_id"] in moved:
+            assert sensitivity["scenario_sensitive"] is True
+            assert sensitivity["first_flip"] is not None
+        else:
+            assert sensitivity["scenario_sensitive"] is False
+            assert sensitivity["first_flip"] is None
 
 
 def test_changing_the_capture_assumption_moves_a_start_date(client):
@@ -237,9 +304,9 @@ def test_coverage_counts_how_we_know_each_row(client):
 # --- export -----------------------------------------------------------------
 
 
-def test_export_carries_every_scenario_in_one_document(client):
+def test_export_carries_every_scenario_in_one_document(export_client):
     """ADR-005 decision 2."""
-    document = client.get("/api/export", params=BASE).json()
+    document = export_client.get("/api/export", params=BASE).json()
     scenarios = {
         p["value"]
         for c in document["components"]
@@ -249,16 +316,105 @@ def test_export_carries_every_scenario_in_one_document(client):
     assert scenarios == {"Z_aggressive", "Z_central", "Z_optimistic"}
 
 
-def test_export_bom_refs_are_unique(client):
-    document = client.get("/api/export", params=BASE).json()
+def test_export_bom_refs_are_unique(export_client):
+    document = export_client.get("/api/export", params=BASE).json()
     refs = [c["bom-ref"] for c in document["components"]]
     assert len(refs) == len(set(refs))
 
 
-def test_export_is_offered_as_a_download(client):
-    r = client.get("/api/export", params=BASE)
+def test_export_is_offered_as_a_download(export_client):
+    r = export_client.get("/api/export", params=BASE)
     assert "attachment" in r.headers["content-disposition"]
     assert r.json()["specVersion"] == "1.6"
+
+
+def test_export_is_unsigned_by_default(export_client):
+    r = export_client.get("/api/export", params=BASE)
+    assert r.headers["x-pramana-signed"] == "false"
+    assert "signature" not in r.json()
+
+
+# --- signed export (OI-013) --------------------------------------------------
+
+
+def test_export_is_signed_when_a_key_is_configured():
+    from ecdat.export.signing import generate_signing_key, verify_bom
+
+    key = generate_signing_key()
+    registry = TokenRegistry.from_raw_tokens({EXPORTER_TOKEN: Role.EXPORTER})
+    app = create_app(token_registry=registry, signing_key=key, signing_key_id="test-signing-key")
+    signed_client = TestClient(app, headers={"Authorization": f"Bearer {EXPORTER_TOKEN}"})
+
+    r = signed_client.get("/api/export", params=BASE)
+    assert r.headers["x-pramana-signed"] == "true"
+    document = r.json()
+    assert document["signature"]["keyId"] == "test-signing-key"
+    verify_bom(document)  # must not raise -- a real, verifying signature
+
+
+# --- RBAC and the audit log (build-plan.md P17) ------------------------------
+
+
+def test_export_with_a_viewer_token_is_403_not_a_silent_downgrade(client):
+    r = client.get("/api/export", params=BASE)
+    assert r.status_code == 403
+
+
+def test_ledger_with_no_token_is_401(anonymous_client):
+    r = anonymous_client.get("/api/ledger", params=q(scenario="Z_central"))
+    assert r.status_code == 401
+
+
+def test_ledger_with_an_unrecognised_token_is_401(anonymous_client):
+    r = anonymous_client.get(
+        "/api/ledger",
+        params=q(scenario="Z_central"),
+        headers={"Authorization": "Bearer not-a-real-token"},
+    )
+    assert r.status_code == 401
+
+
+def test_health_needs_no_token(anonymous_client):
+    """Not a data endpoint -- a load balancer probe should not need a role."""
+    assert anonymous_client.get("/api/health").status_code == 200
+
+
+def test_every_allowed_request_is_audited(client, audit_log, export_client):
+    before = len(audit_log.entries())
+    client.get("/api/ledger", params=q(scenario="Z_central"))
+    entries = audit_log.entries()
+    assert len(entries) == before + 1
+    entry = entries[-1]
+    assert entry.outcome == "allowed"
+    assert entry.verb.value == "READ"
+    assert entry.path == "/api/ledger"
+    assert entry.principal_fingerprint != "(unauthenticated)"
+
+
+def test_export_is_audited_as_the_export_verb(export_client, audit_log):
+    before = len(audit_log.entries())
+    export_client.get("/api/export", params=BASE)
+    entries = audit_log.entries()
+    assert len(entries) == before + 1
+    assert entries[-1].verb.value == "EXPORT"
+    assert entries[-1].path == "/api/export"
+
+
+def test_a_refused_request_is_audited_too(anonymous_client, audit_log):
+    before = len(audit_log.entries())
+    anonymous_client.get("/api/ledger", params=q(scenario="Z_central"))
+    entries = audit_log.entries()
+    assert len(entries) == before + 1
+    assert entries[-1].outcome == "MissingTokenError"
+    assert entries[-1].principal_fingerprint == "(unauthenticated)"
+
+
+def test_no_audit_entry_ever_contains_a_raw_token(client, audit_log):
+    client.get("/api/ledger", params=q(scenario="Z_central"))
+    for entry in audit_log.entries():
+        dumped = entry.model_dump_json()
+        assert VIEWER_TOKEN not in dumped
+        assert EXPORTER_TOKEN not in dumped
 
 
 # --- recommendations (Part 8) ------------------------------------------------
@@ -317,3 +473,28 @@ def test_profiles_endpoint_cites_each_profile(client):
     body = client.get("/api/profiles").json()
     assert body["default"] == "NIST_L3"
     assert all(p["citation"].startswith("docs/architecture/") for p in body["profiles"])
+
+
+def test_graph_endpoint_is_labelled_as_a_fixture_and_carries_both_edge_strengths(client):
+    """P15: nodes, typed edges with both strengths present in this demo
+    fixture, and the two named gaps -- never silently dropped."""
+    body = client.get("/api/graph").json()
+    assert body["fixture"] is True
+    assert len(body["nodes"]) >= 3
+
+    strengths = {edge["strength"] for edge in body["edges"]}
+    assert "claimed" in strengths
+    assert "unclaimed" in strengths
+
+    claimed = [e for e in body["edges"] if e["strength"] == "claimed"]
+    assert all(e["rule_id"] == "IDENTITY-CERT-DER-001" for e in claimed)
+    assert all(e["evidence_basis"] == "content_identity" for e in claimed)
+
+    unclaimed = [e for e in body["edges"] if e["strength"] == "unclaimed"]
+    assert all(e["rule_id"] is None for e in unclaimed)
+    assert all(e["type"] == "shares_public_key_unclaimed" for e in unclaimed)
+
+    layers = {(g["from_layer"], g["to_layer"]) for g in body["gaps"]}
+    assert ("library", "usage") in layers
+    assert ("service", "protected data") in layers
+    assert all(g["why"] for g in body["gaps"])

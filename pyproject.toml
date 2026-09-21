@@ -8,14 +8,31 @@ dependencies = [
     "pyyaml>=6.0",
     # CycloneDX 1.6 export is validated against the bundled schema
     # (schemas/cyclonedx-1.6.schema.json), never against a fetched one.
-    # >=4.18 for the `referencing` registry API.
-    "jsonschema>=4.18",
+    # >=4.18 for the `referencing` registry API. The `format` extra pulls in
+    # rfc3987 so `format: "uri"` is actually checked, not merely annotated --
+    # without it, JSF's signature.algorithm oneOf (an enum branch and a
+    # "proprietary algorithm as a URI" branch) is genuinely ambiguous for a
+    # value like "Ed25519": with no format validation, "uri" is a no-op
+    # constraint, so "Ed25519" matches BOTH the enum branch and the unchecked
+    # "uri" branch -- oneOf requires exactly one match and correctly refuses
+    # a value that matches two. Caught building export/signing.py (OI-013)
+    # via a real signed document failing schema validation, not assumed.
+    "jsonschema[format]>=4.18",
     # certs/parser.py (PEM/DER/PKCS#12 parsing) and tls/parser.py (X.509
     # subject/issuer reads) both import this directly; was missing from
     # this list even though every adapter test that exercises it passes on
     # a dev machine that happens to already have it installed some other
     # way -- caught 2026-09-20 trying a clean install in a fresh venv.
     "cryptography>=42.0",
+    # export/signing.py (OI-013): RFC 8785 JSON Canonicalization Scheme,
+    # the exact algorithm CycloneDX's JSF signature field requires
+    # (schemas/jsf-0.82.schema.json's own spec page cites RFC8785 by name).
+    # A security-critical canonicalization algorithm is exactly the kind of
+    # thing this project uses an established, purpose-built library for
+    # rather than reimplementing (same reasoning as jsonschema/cryptography
+    # above), and there is no other JCS implementation already in this
+    # dependency tree.
+    "rfc8785>=0.1.4",
 ]
 
 [project.optional-dependencies]

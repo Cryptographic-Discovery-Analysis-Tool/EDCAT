@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Any, Callable
 
@@ -57,8 +58,29 @@ from ecdat.adapters.packages.adapter import live_scan_runner as live_packages_ru
 from ecdat.adapters.source.semgrep import SemgrepSourceAdapter
 from ecdat.adapters.tls.adapter import TlsEndpointAdapter, TlsProbeBundle
 from ecdat.correlation.engine import CorrelationReport, ForbiddenEdgeError, correlate
+from ecdat.correlation.graph import EvidenceGraph, build_graph
 from ecdat.model.evidence import ConfidenceBasis
 from ecdat.model.topology import ProbeTargetIdentity
+from ecdat.risk.run import LedgerSubject, evaluate_run
+from ecdat.risk.scenarios import (
+    CaptureAssumption,
+    CaptureMode,
+    NoCitedScenarioError,
+    Policy,
+    Scenario,
+)
+from ecdat.context.binding import Lifetime
+from ecdat.store import DiffClass, JsonlRunStore, NoSuchRunError, Run
+from ecdat.store.diff import diff_runs
+from ecdat.export.signing import (
+    MissingSignatureError,
+    SignatureVerificationError,
+    generate_signing_key,
+    load_signing_key,
+    private_key_pem,
+    verify_bom,
+)
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 #: Every adapter that exists, keyed by its own declared `adapter_id`. Not
 #: only a CLI concern -- kept as the canonical id -> class map other code
@@ -560,6 +582,59 @@ def _correlate_document(report: CorrelationReport) -> dict[str, Any]:
     }
 
 
+def _agility_document(agility) -> dict[str, Any]:
+    """build-plan.md P14, serialised: each of the three adopted fields with
+    its own value, epistemic state and evidence_refs -- never collapsed into
+    one summary field."""
+    def field(fv) -> dict[str, Any]:
+        return {
+            "value": fv.value.value if hasattr(fv.value, "value") else fv.value,
+            "state": fv.state.value,
+            "evidence_refs": list(fv.evidence_refs),
+        }
+
+    return {
+        "algorithm_selection": field(agility.algorithm_selection),
+        "hybrid_capable": field(agility.hybrid_capable),
+        "provider_pluggable": field(agility.provider_pluggable),
+    }
+
+
+def _graph_document(graph: EvidenceGraph) -> dict[str, Any]:
+    """P15's graph view, serialised. Every edge carries its `strength` field
+    verbatim -- nothing here decides which edges are shown or hides the
+    distinction between claimed and unclaimed."""
+    return {
+        "nodes": [
+            {
+                "asset_id": node.asset_id,
+                "algorithm_family": node.algorithm_family,
+                "purpose": node.purpose,
+                "scope_anchor": node.scope_anchor,
+                "agility": _agility_document(node.agility),
+            }
+            for node in graph.nodes
+        ],
+        "edges": [
+            {
+                "source": edge.source,
+                "target": edge.target,
+                "strength": edge.strength.value,
+                "type": edge.type,
+                "evidence_basis": edge.evidence_basis,
+                "rule_id": edge.rule_id,
+                "epistemic_state": edge.epistemic_state,
+                "note": edge.note,
+            }
+            for edge in graph.edges
+        ],
+        "gaps": [
+            {"from_layer": gap.from_layer, "to_layer": gap.to_layer, "why": gap.why}
+            for gap in graph.gaps
+        ],
+    }
+
+
 def _correlate(args: argparse.Namespace) -> int:
     try:
         plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
@@ -600,16 +675,208 @@ def _correlate(args: argparse.Namespace) -> int:
         print(f"correlation refused: {exc}", file=sys.stderr)
         return 3
 
-    document = _correlate_document(report)
+    if args.format == "graph":
+        document = _graph_document(build_graph(report))
+        summary = (
+            f"{len(results)} scan(s) -> {len(report.assets)} node(s), "
+            f"{len(document['edges'])} edge(s) ({sum(1 for e in document['edges'] if e['strength'] == 'claimed')} claimed, "
+            f"{sum(1 for e in document['edges'] if e['strength'] == 'unclaimed')} unclaimed), "
+            f"{len(document['gaps'])} named gap(s)"
+        )
+    else:
+        document = _correlate_document(report)
+        summary = (
+            f"{len(results)} scan(s) -> {len(report.assets)} asset(s), "
+            f"{len(report.relationships)} relationship(s)"
+        )
+
     output = json.dumps(document, indent=2, sort_keys=False)
     if args.out:
         Path(args.out).write_text(output + "\n", encoding="utf-8")
-        print(
-            f"{len(results)} scan(s) -> {len(report.assets)} asset(s), "
-            f"{len(report.relationships)} relationship(s) -> {args.out}"
-        )
+        print(f"{summary} -> {args.out}")
     else:
         print(output)
+    return 0
+
+
+# --- run store: evaluate a ledger, save it, list runs, diff two of them ----
+#
+# build-plan.md P13. `store/` is a real repository behind the RunStore
+# interface `risk/run.py::evaluate_run` already left open; nothing here
+# decides a band -- `ledger-run` calls the same `evaluate_run` the API calls,
+# and `diff` calls the same `diff_runs` tested in tests/unit/store/.
+
+
+def _load_ledger_subjects(path: str) -> list[LedgerSubject]:
+    document = json.loads(Path(path).read_text(encoding="utf-8"))
+    rows = document["subjects"] if isinstance(document, dict) else document
+    return [LedgerSubject.model_validate(row) for row in rows]
+
+
+def _ledger_run(args: argparse.Namespace) -> int:
+    try:
+        subjects = _load_ledger_subjects(args.subjects)
+    except OSError as exc:
+        print(f"could not read subjects file {args.subjects!r}: {type(exc).__name__}", file=sys.stderr)
+        return 2
+    except (json.JSONDecodeError, KeyError) as exc:
+        print(f"subjects file {args.subjects!r} is malformed: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        scenario = Scenario.load(args.scenario)
+    except NoCitedScenarioError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    try:
+        policy = Policy(
+            capture_assumption=CaptureAssumption(
+                mode=CaptureMode(args.capture), since=args.capture_since
+            ),
+            rollout_Y_default=Lifetime(days=args.rollout_y_days),
+            accept_inferred_inputs=args.accept_inferred,
+        )
+    except ValueError as exc:
+        print(f"policy: {exc}", file=sys.stderr)
+        return 2
+
+    as_of = args.as_of or date.today()
+    result = evaluate_run(subjects, scenario=scenario, policy=policy, as_of=as_of)
+    run = Run.from_result(result, target_id=args.target_id)
+
+    store = JsonlRunStore(args.store_dir)
+    store.save(run)
+    print(
+        f"{run.run_id}: {len(run.records)} row(s), {len(run.grover_flags)} grover flag(s), "
+        f"{len(run.skipped)} skipped -> {args.store_dir}"
+    )
+    return 0
+
+
+def _runs(args: argparse.Namespace) -> int:
+    store = JsonlRunStore(args.store_dir)
+    summaries = store.list_runs(target_id=args.target_id)
+    if args.json:
+        print(
+            json.dumps(
+                [
+                    {
+                        "run_id": s.run_id,
+                        "target_id": s.target_id,
+                        "scenario_id": s.scenario_id,
+                        "as_of": s.as_of.isoformat(),
+                        "recorded_at": s.recorded_at.isoformat(),
+                        "row_count": s.row_count,
+                    }
+                    for s in summaries
+                ],
+                indent=2,
+            )
+        )
+        return 0
+    if not summaries:
+        print(f"no runs in {args.store_dir}")
+        return 0
+    for s in summaries:
+        print(
+            f"{s.run_id}  {s.recorded_at.isoformat()}  target={s.target_id}  "
+            f"scenario={s.scenario_id}  as_of={s.as_of.isoformat()}  rows={s.row_count}"
+        )
+    return 0
+
+
+def _diff(args: argparse.Namespace) -> int:
+    store = JsonlRunStore(args.store_dir)
+    try:
+        old = store.load(getattr(args, "from"))
+        new = store.load(args.to)
+    except NoSuchRunError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    result = diff_runs(old, new)
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "from_run_id": result.from_run_id,
+                    "to_run_id": result.to_run_id,
+                    "rows": [
+                        {
+                            "usage_context_id": row.usage_context_id,
+                            "diff_class": row.diff_class.value,
+                            "old_band": row.old_band.value if row.old_band else None,
+                            "new_band": row.new_band.value if row.new_band else None,
+                            "reason": row.reason,
+                        }
+                        for row in result.rows
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return 0
+
+    counts: dict[str, int] = {}
+    for row in result.rows:
+        counts[row.diff_class.value] = counts.get(row.diff_class.value, 0) + 1
+    print(f"{old.run_id} -> {new.run_id}: " + ", ".join(f"{k}={v}" for k, v in counts.items()))
+    for row in result.rows:
+        if row.diff_class == DiffClass.UNCHANGED and not args.show_unchanged:
+            continue
+        print(f"  [{row.diff_class.value:9s}] {row.usage_context_id}: {row.reason}")
+    return 0
+
+
+# --- signed export: key generation and offline verification (OI-013) ------
+
+
+def _keygen(args: argparse.Namespace) -> int:
+    path = Path(args.out)
+    if path.exists() and not args.force:
+        print(f"{path} already exists; pass --force to overwrite it", file=sys.stderr)
+        return 2
+    key = generate_signing_key()
+    path.write_bytes(private_key_pem(key))
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass  # best-effort on platforms without POSIX permission bits
+    public = key.public_key().public_bytes(encoding=Encoding.Raw, format=PublicFormat.Raw)
+    import base64
+
+    fingerprint = base64.urlsafe_b64encode(public).rstrip(b"=").decode("ascii")
+    print(f"wrote Ed25519 private key -> {path}")
+    print(f"public key (base64url, for out-of-band distribution to a verifier): {fingerprint}")
+    print(
+        "set ECDAT_SIGNING_KEY_PATH to this file's path before running "
+        "`ecdat correlate`/serving the API to sign exports with it."
+    )
+    return 0
+
+
+def _verify_export(args: argparse.Namespace) -> int:
+    try:
+        document = json.loads(Path(args.file).read_text(encoding="utf-8"))
+    except OSError as exc:
+        print(f"could not read {args.file!r}: {type(exc).__name__}", file=sys.stderr)
+        return 2
+    except json.JSONDecodeError as exc:
+        print(f"{args.file!r} is not valid JSON: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        verify_bom(document)
+    except MissingSignatureError as exc:
+        print(f"unsigned: {exc}", file=sys.stderr)
+        return 1
+    except SignatureVerificationError as exc:
+        print(f"INVALID: {exc}", file=sys.stderr)
+        return 1
+
+    key_id = document["signature"].get("keyId", "(no keyId)")
+    print(f"signature valid -- keyId={key_id!r}")
     return 0
 
 
@@ -756,7 +1023,83 @@ def main(argv: list[str] | None = None) -> int:
         "else optional, defaulting the same way `scan` itself defaults it)",
     )
     correlate_parser.add_argument("--out", help="write the correlation report here (default: stdout)")
+    correlate_parser.add_argument(
+        "--format",
+        choices=["report", "graph"],
+        default="report",
+        help="'report' (default): the flattened asset/relationship document. "
+        "'graph' (build-plan.md P15): nodes, typed epistemically-labelled edges "
+        "(claimed vs unclaimed), and the named gaps this engine refuses to draw.",
+    )
     correlate_parser.set_defaults(func=_correlate)
+
+    ledger_run = subparsers.add_parser(
+        "ledger-run",
+        help="evaluate a ledger over a subjects file under one scenario, and save the run "
+        "(build-plan.md P13)",
+    )
+    ledger_run.add_argument(
+        "--subjects",
+        required=True,
+        help="JSON file of LedgerSubjects -- same schema as "
+        "tests/fixtures/ledger/subjects.json ({'subjects': [...]} or a bare list)",
+    )
+    ledger_run.add_argument("--target-id", required=True, help="identifier for the scanned target")
+    ledger_run.add_argument("--scenario", required=True, help="a scenario id from data/scenarios.yaml")
+    ledger_run.add_argument(
+        "--capture",
+        default=CaptureMode.SINCE_CONFIRMED.value,
+        choices=[m.value for m in CaptureMode],
+        help="capture_assumption mode (§5.4); default SINCE_CONFIRMED, the conservative reading",
+    )
+    ledger_run.add_argument(
+        "--capture-since",
+        type=date.fromisoformat,
+        default=None,
+        help="required date when --capture=SINCE_DATE",
+    )
+    ledger_run.add_argument(
+        "--rollout-y-days",
+        type=int,
+        required=True,
+        help="rollout window Y in days; no cited default exists (data/scenarios.yaml), so it "
+        "must be supplied explicitly, exactly like the dashboard's own control",
+    )
+    ledger_run.add_argument("--accept-inferred", action="store_true")
+    ledger_run.add_argument("--as-of", type=date.fromisoformat, default=None, help="default: today")
+    ledger_run.add_argument(
+        "--store-dir", required=True, help="directory a JsonlRunStore reads and writes runs in"
+    )
+    ledger_run.set_defaults(func=_ledger_run)
+
+    runs_parser = subparsers.add_parser("runs", help="list runs in a store (build-plan.md P13)")
+    runs_parser.add_argument("--store-dir", required=True)
+    runs_parser.add_argument("--target-id", default=None, help="only list runs for this target")
+    runs_parser.add_argument("--json", action="store_true")
+    runs_parser.set_defaults(func=_runs)
+
+    diff_parser = subparsers.add_parser(
+        "diff", help="compare two runs: NEW/CHANGED/REMOVED/MIGRATED/REGRESSED/UNCHANGED (P13)"
+    )
+    diff_parser.add_argument("--store-dir", required=True)
+    diff_parser.add_argument("--from", dest="from", required=True, help="older run_id")
+    diff_parser.add_argument("--to", required=True, help="newer run_id")
+    diff_parser.add_argument("--show-unchanged", action="store_true")
+    diff_parser.add_argument("--json", action="store_true")
+    diff_parser.set_defaults(func=_diff)
+
+    keygen_parser = subparsers.add_parser(
+        "keygen", help="generate an Ed25519 signing key for signed CBOM export (OI-013)"
+    )
+    keygen_parser.add_argument("--out", required=True, help="path to write the PEM private key")
+    keygen_parser.add_argument("--force", action="store_true", help="overwrite an existing file")
+    keygen_parser.set_defaults(func=_keygen)
+
+    verify_parser = subparsers.add_parser(
+        "verify-export", help="verify a signed CycloneDX export's JSF signature (OI-013)"
+    )
+    verify_parser.add_argument("--file", required=True, help="the exported CBOM JSON file")
+    verify_parser.set_defaults(func=_verify_export)
 
     args = parser.parse_args(argv)
     return args.func(args)

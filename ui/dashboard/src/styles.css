@@ -204,6 +204,50 @@ tbody tr:hover td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .band-SAVABLE { color: var(--text); }
 .band-SAFE, .band-SAFE_UNTIL_Z { color: var(--accent); }
 
+.graph-edge {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.graph-edge:last-child { border-bottom: none; }
+.graph-edge-line { display: flex; align-items: center; gap: 8px; }
+.graph-edge-arrow { color: var(--accent); font-weight: 600; }
+.graph-edge-arrow.weak { color: var(--warn); font-weight: 400; }
+.graph-edge-arrow.gap { color: var(--alert); }
+.graph-edge.unclaimed { opacity: 0.85; }
+
+.graph-node {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+}
+.graph-node:last-child { border-bottom: none; }
+.agility-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.agility-field {
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--dim);
+}
+.agility-field.agility-known { color: var(--accent); border-color: var(--accent); }
+.agility-field.agility-inferred { color: var(--warn); border-color: var(--warn); }
+.agility-field.agility-unknown { color: var(--dim); }
+
+.graph-gap {
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.graph-gap:last-child { border-bottom: none; }
+
+.badge-sensitive {
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid var(--warn);
+  border-radius: 3px;
+  color: var(--warn);
+  white-space: nowrap;
+  cursor: help;
+}
+
 .status {
   font-size: 10px;
   padding: 1px 5px;

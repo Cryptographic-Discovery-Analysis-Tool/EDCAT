@@ -21,14 +21,23 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 
+from ecdat.adapters.base import ScanTarget
+from ecdat.adapters.certs.adapter import CertificateAdapter
 from ecdat.closure.engine import closure_queue, tasks_for
 from ecdat.context.binding import Lifetime
+from ecdat.correlation.engine import CorrelationReport, correlate
+from ecdat.correlation.graph import EvidenceGraph, build_graph
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from ecdat.export.cyclonedx import build_bom
+from ecdat.export.signing import sign_bom, signing_key_from_env
 from ecdat.model.epistemic import EpistemicState
+from ecdat.model.evidence import ConfidenceBasis
 from ecdat.recommend.engine import (
     NoCitedOptionError,
     Profile,
@@ -44,8 +53,12 @@ from ecdat.risk.scenarios import (
     Policy,
     Scenario,
 )
+from ecdat.risk.sensitivity import sensitivity_for
+from ecdat.security.audit import AuditLog, InMemoryAuditLog, Verb, entry_for
+from ecdat.security.auth import AuthError, InsufficientRoleError, Principal, Role, TokenRegistry
 
 SubjectsProvider = Callable[[], list[LedgerSubject]]
+_bearer_scheme = HTTPBearer(auto_error=False)
 
 #: The fixture the dashboard opens with when nothing else is configured.
 #: Clearly labelled in the UI as a fixture: it is constructed evidence, not a
@@ -58,6 +71,46 @@ DEFAULT_SUBJECTS = (
 def load_subjects(path: Path) -> list[LedgerSubject]:
     document = json.loads(path.read_text(encoding="utf-8"))
     return [LedgerSubject.model_validate(row) for row in document["subjects"]]
+
+
+CorrelationProvider = Callable[[], CorrelationReport]
+
+#: Three services, one certificate copied byte-for-byte between two of them
+#: (a real `same-object` edge) and re-issued on the same key at the third (a
+#: real `shares_public_key_unclaimed` pair) -- pre-generated fixture
+#: certificates plus a plan file, the exact shape `ecdat correlate --plan`
+#: reads. `confidence` and its justification live in the plan file (data),
+#: never as a literal in this module: src/'s own citation guard
+#: (test_no_confidence_literal_is_hardcoded_in_src) forbids a hardcoded
+#: `base_confidence=<number>` in src/, because no cited table exists yet
+#: (OI-004) and every real value must come from an explicit, justified
+#: source outside the code -- here, the fixture's own data file.
+DEFAULT_CORRELATION_PLAN = (
+    Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "correlation" / "demo_plan.json"
+)
+
+
+def load_correlation_report(plan_path: Path) -> CorrelationReport:
+    """Run `certs-x509` over every entry in a correlate-style plan file and
+    return the resulting `CorrelationReport` -- the same path `ecdat
+    correlate` drives, just without argparse in between."""
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    base_dir = plan_path.parent
+    results = []
+    for entry in plan:
+        basis = ConfidenceBasis(
+            source="ADAPTER_DECLARED", justification=entry["confidence_justification"]
+        )
+        adapter = CertificateAdapter(base_confidence=entry["confidence"], confidence_basis=basis)
+        target = ScanTarget(target_id=entry["target_id"], locator=str(base_dir / entry["input"]))
+        results.append(adapter.run(target))
+    return correlate(results)
+
+
+def default_correlation_report() -> CorrelationReport:
+    """P15's demo graph. Clearly a fixture in the UI, exactly like
+    `DEFAULT_SUBJECTS` is -- no adapter has scanned anything real."""
+    return load_correlation_report(DEFAULT_CORRELATION_PLAN)
 
 
 def _policy(
@@ -78,6 +131,42 @@ def _scenario(scenario_id: str) -> Scenario:
         return Scenario.load(scenario_id)
     except NoCitedScenarioError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+def _sensitivity(record: CalculationRecord) -> dict[str, Any]:
+    """P19: every row's band, re-run under all three cited Z dates, so a row
+    that would answer differently under a different scenario says so without
+    the operator having to flip the control and remember what it said before.
+    """
+    sensitivity = sensitivity_for(record)
+    return {
+        "scenario_sensitive": sensitivity.scenario_sensitive,
+        "under_scenario": [
+            {
+                "scenario_id": o.scenario_id,
+                "label": o.label,
+                "z_date": o.z_date.isoformat(),
+                "band": o.band.value,
+                "deadline": o.deadline.isoformat() if o.deadline else None,
+            }
+            for o in sensitivity.outcomes
+        ],
+        "first_flip": (
+            {
+                "scenario_id": sensitivity.first_flip.scenario_id,
+                "label": sensitivity.first_flip.label,
+                "z_date": sensitivity.first_flip.z_date.isoformat(),
+                "band": sensitivity.first_flip.band.value,
+                "deadline": (
+                    sensitivity.first_flip.deadline.isoformat()
+                    if sensitivity.first_flip.deadline
+                    else None
+                ),
+            }
+            if sensitivity.first_flip is not None
+            else None
+        ),
+    }
 
 
 def _row(record: CalculationRecord) -> dict[str, Any]:
@@ -110,6 +199,7 @@ def _row(record: CalculationRecord) -> dict[str, Any]:
         "M": record.M.isoformat() if record.M else None,
         "start_possible": record.start_possible.isoformat() if record.start_possible else None,
         "start_confirmed": record.start_confirmed.isoformat() if record.start_confirmed else None,
+        "sensitivity": _sensitivity(record),
     }
 
 
@@ -210,6 +300,11 @@ def create_app(
     subjects_provider: SubjectsProvider | None = None,
     *,
     static_dir: Path | None = None,
+    correlation_provider: CorrelationProvider | None = None,
+    token_registry: TokenRegistry | None = None,
+    audit_log: AuditLog | None = None,
+    signing_key: Ed25519PrivateKey | None = None,
+    signing_key_id: str = "pramana-export-key",
 ) -> FastAPI:
     app = FastAPI(
         title="Pramana",
@@ -217,6 +312,57 @@ def create_app(
         version="0.1.0",
     )
     provider: SubjectsProvider = subjects_provider or (lambda: load_subjects(DEFAULT_SUBJECTS))
+    #: Computed once per app instance, not per request -- it runs a real
+    #: adapter and the correlation engine, and (like DEFAULT_SUBJECTS) is
+    #: fixture data, not a live scan.
+    correlation_report = (correlation_provider or default_correlation_report)()
+
+    #: build-plan.md P17. Secure by default: no explicit registry and no
+    #: ECDAT_API_TOKENS means every request is refused until an operator
+    #: configures one. app.state carries both so a test or an operator can
+    #: introspect what got recorded without a second wiring path.
+    registry = token_registry or TokenRegistry.from_env()
+    audit = audit_log or InMemoryAuditLog()
+    app.state.token_registry = registry
+    app.state.audit_log = audit
+
+    #: OI-013. `None` when unconfigured (default: no ECDAT_SIGNING_KEY_PATH)
+    #: -- export proceeds unsigned rather than inventing a key. app.state
+    #: carries it so a test can pass one in without an env var round-trip.
+    key = signing_key if signing_key is not None else signing_key_from_env()
+    app.state.signing_key = key
+
+    def _require(role: Role, verb: Verb):
+        """One dependency factory used by every protected route. Every call
+        -- allowed or refused -- is audited (P17: "who read or exported
+        what", including who tried and was refused); a raw token is never
+        the thing that gets logged or compared, only its fingerprint
+        (security/auth.py)."""
+
+        def dependency(
+            request: Request,
+            credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+        ) -> Principal:
+            raw_token = credentials.credentials if credentials else None
+            principal: Principal | None = None
+            try:
+                principal = registry.authenticate(raw_token)
+                if not principal.can(role):
+                    raise InsufficientRoleError(required=role, actual=principal.role)
+            except AuthError as error:
+                audit.record(
+                    entry_for(
+                        principal, verb=verb, path=request.url.path, outcome=type(error).__name__
+                    )
+                )
+                raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+            audit.record(entry_for(principal, verb=verb, path=request.url.path, outcome="allowed"))
+            return principal
+
+        return dependency
+
+    require_viewer = _require(Role.VIEWER, Verb.READ)
+    require_exporter = _require(Role.EXPORTER, Verb.EXPORT)
 
     def run(
         scenario_id: str,
@@ -265,6 +411,7 @@ def create_app(
         accept_inferred: bool = Query(False),
         rollout_y_days: int = Query(..., ge=0),
         as_of: date | None = Query(None),
+        principal: Principal = Depends(require_viewer),
     ) -> dict[str, Any]:
         result = run(scenario, capture, since, accept_inferred, rollout_y_days, as_of)
         ordered = sorted(result.records, key=lambda r: rank_key(r))
@@ -288,6 +435,7 @@ def create_app(
         accept_inferred: bool = Query(False),
         rollout_y_days: int = Query(..., ge=0),
         as_of: date | None = Query(None),
+        principal: Principal = Depends(require_viewer),
     ) -> dict[str, Any]:
         result = run(scenario, capture, since, accept_inferred, rollout_y_days, as_of)
         for record in result.records:
@@ -303,6 +451,7 @@ def create_app(
         accept_inferred: bool = Query(False),
         rollout_y_days: int = Query(..., ge=0),
         as_of: date | None = Query(None),
+        principal: Principal = Depends(require_viewer),
     ) -> dict[str, Any]:
         result = run(scenario, capture, since, accept_inferred, rollout_y_days, as_of)
         return {
@@ -318,11 +467,60 @@ def create_app(
         accept_inferred: bool = Query(False),
         rollout_y_days: int = Query(..., ge=0),
         as_of: date | None = Query(None),
+        principal: Principal = Depends(require_viewer),
     ) -> dict[str, Any]:
         return _coverage(run(scenario, capture, since, accept_inferred, rollout_y_days, as_of))
 
+    @app.get("/api/graph")
+    def graph(principal: Principal = Depends(require_viewer)) -> dict[str, Any]:
+        """P15: the evidence graph view. `fixture` is always true today --
+        `correlation_report` is `default_correlation_report()` unless a
+        caller wires a real one in, exactly like `DEFAULT_SUBJECTS`."""
+        def agility_field(fv) -> dict[str, Any]:
+            return {
+                "value": fv.value.value if hasattr(fv.value, "value") else fv.value,
+                "state": fv.state.value,
+                "evidence_refs": list(fv.evidence_refs),
+            }
+
+        evidence_graph: EvidenceGraph = build_graph(correlation_report)
+        return {
+            "fixture": True,
+            "nodes": [
+                {
+                    "asset_id": n.asset_id,
+                    "algorithm_family": n.algorithm_family,
+                    "purpose": n.purpose,
+                    "scope_anchor": n.scope_anchor,
+                    "agility": {
+                        "algorithm_selection": agility_field(n.agility.algorithm_selection),
+                        "hybrid_capable": agility_field(n.agility.hybrid_capable),
+                        "provider_pluggable": agility_field(n.agility.provider_pluggable),
+                    },
+                }
+                for n in evidence_graph.nodes
+            ],
+            "edges": [
+                {
+                    "source": e.source,
+                    "target": e.target,
+                    "strength": e.strength.value,
+                    "type": e.type,
+                    "evidence_basis": e.evidence_basis,
+                    "rule_id": e.rule_id,
+                    "epistemic_state": e.epistemic_state,
+                    "note": e.note,
+                }
+                for e in evidence_graph.edges
+            ],
+            "gaps": [
+                {"from_layer": g.from_layer, "to_layer": g.to_layer, "why": g.why}
+                for g in evidence_graph.gaps
+            ],
+        }
+
     @app.get("/api/profiles")
-    def profiles() -> dict[str, Any]:
+    def profiles(principal: Principal = Depends(require_viewer)) -> dict[str, Any]:
         return {
             "profiles": [
                 {
@@ -338,7 +536,9 @@ def create_app(
         }
 
     @app.get("/api/recommendations")
-    def recommendations(profile: str | None = Query(None)) -> dict[str, Any]:
+    def recommendations(
+        profile: str | None = Query(None), principal: Principal = Depends(require_viewer)
+    ) -> dict[str, Any]:
         """Part 8. Keyed on purpose, so it needs no scenario and no Z date --
         what to move to does not depend on when Z is, only on what the key is
         doing."""
@@ -367,17 +567,27 @@ def create_app(
         accept_inferred: bool = Query(False),
         rollout_y_days: int = Query(..., ge=0),
         as_of: date | None = Query(None),
+        principal: Principal = Depends(require_exporter),
     ) -> JSONResponse:
-        """Every scenario in one document (ADR-005 decision 2)."""
+        """Every scenario in one document (ADR-005 decision 2). Signed
+        (OI-013) when the app was configured with a key; the response says
+        which, via `X-Pramana-Signed`, rather than leaving a caller to
+        infer it from parsing the body."""
         records: list[CalculationRecord] = []
         for scenario in Scenario.load_all():
             records.extend(
                 run(scenario.id, capture, since, accept_inferred, rollout_y_days, as_of).records
             )
         document = build_bom(records, timestamp=datetime.now(timezone.utc))
+        signed = app.state.signing_key is not None
+        if signed:
+            document = sign_bom(document, private_key=app.state.signing_key, key_id=signing_key_id)
         return JSONResponse(
             content=document,
-            headers={"Content-Disposition": 'attachment; filename="pramana-cbom.json"'},
+            headers={
+                "Content-Disposition": 'attachment; filename="pramana-cbom.json"',
+                "X-Pramana-Signed": "true" if signed else "false",
+            },
         )
 
     bundle = static_dir or (Path(__file__).resolve().parents[3] / "ui" / "dashboard" / "dist")
