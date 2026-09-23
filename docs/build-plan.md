@@ -646,7 +646,7 @@ SIH26164 repos). Each item was checked against the code before being listed.
 
 | Phase | What | Why now | Status |
 |---|---|---|---|
-| **P21** | **Scan → ledger bridge.** Wire `function/classifier.py` (built, never called) so adapter findings become `UsageContext`s; derive `TemporalEvidence` from what adapters actually observe; give data-class binding a declaration input. | No code in `src/` constructs a `LedgerSubject`. Every band the dashboard shows comes from a hand-built fixture. This is the single largest gap. | open |
+| **P21** | **Scan → ledger bridge.** Wire `function/classifier.py` (built, never called) so adapter findings become `UsageContext`s; derive `TemporalEvidence` from what adapters actually observe; give data-class binding a declaration input. | No code in `src/` constructs a `LedgerSubject`. Every band the dashboard shows comes from a hand-built fixture. This is the single largest gap. | **done (2026-09-23)** — see below |
 | **P22** | **Sourced Z scenarios and policies.** Cite GRI Quantum Threat Timeline 2025 (pub. 9 Mar 2026) for the Z dates; add India DST roadmap (CII by 2029, inventories by Dec 2027), NIST IR 8547 ipd (deprecate 2030 / disallow 2035), EU roadmap (high-risk by 2030) as selectable policy deadlines. | `data/scenarios.yaml` Z dates are `TEST_CONSTANT`; `crypto_families.yaml` carries a `TODO-VERIFY: cite NIST IR 8547`. | open |
 | **P23** | **Recommendation corrections.** Public-web TLS server authentication: Chrome has stated it will not accept ML-DSA in X.509 and is backing Merkle Tree Certificates (Let's Encrypt staging late 2026). Add FN-DSA (FIPS 206, draft) and HQC (selected Mar 2025) as flagged-draft options. | `pqc_options.yaml` recommends ML-DSA generically for signatures. | open |
 | **P24** | **Performance.** Evaluate a run once per request set, cache per (subjects, scenario, policy, as_of); compute scenario sensitivity from the three cached runs instead of 3× re-evaluation per row; index the run store. | Dashboard triggers 3 full ledger runs + 3× per-row sensitivity per page load; `list_runs` reads every run file in full. | open |
@@ -660,3 +660,56 @@ X25519MLKEM768 by default with no application change, which is direct support
 for the rule that only an *observed* negotiation stops the clock.
 
 Order: P21 → P22 → P23 → P24 → P25 → P26.
+
+### P21 — Scan → ledger bridge — **done (2026-09-23)**
+
+`src/ecdat/assemble/bridge.py::assemble(results, declarations=...)` turns adapter
+runs into `LedgerSubject`s, adding no judgement of its own: functions come from
+`function/classifier.py` (§5.1, previously never called from `src/`), clock-stopping
+from `adapters/tls/adapter.py::migration_evidence_from` (§5.7), and every date
+from a field an adapter observed.
+
+- **TLS** → `NegotiatedHandshake` → KNOWN key-establishment + server-auth contexts;
+  `first_observed` = the probe date (the only input §5.2 lets confirm); `not_before`
+  joined from `certs-x509` only on an exact DER hash (IDENTITY-CERT-DER-001).
+  **A successful classical-only probe becomes its own row** (`|classical-client`):
+  on the recorded Tier A endpoint the hybrid path is SAFE while a classical-only
+  client still negotiates X25519 — BLEEDING under Z_aggressive, SAVABLE under
+  Z_central, both PARTIAL. Without this row the surface would read as SAFE because
+  the *best* client is safe.
+- **Certificates** → keyUsage → INFERRED capability contexts, `not_before` as
+  possibility only. A certificate already seen in a handshake is not emitted twice.
+- **Source** → `SourceCallSite` (the adapter now records `api_class` from the rule's
+  `$1` capture, present in the recorded 1.99.0 fixture). No start date is invented
+  for a call site. Symmetric `Cipher`, `Mac`, `MessageDigest` stay UNKNOWN, exactly
+  as §5.1 says ("Anything else → UNKNOWN. No default.").
+- **Data class** — the one input no scanner observes — comes from a `Declarations`
+  YAML (`surface` or `asset`, `data_class` naming a cited `data_lifetime.yaml` row,
+  and a required `declared_by`). Undeclared → no binding → UNBOUNDED + closure task.
+- Nothing is dropped silently: every finding that does not become a subject is
+  listed in `Assembly.unassembled` with its reason (package presence: "capability,
+  never usage — by design").
+
+Wired into `ecdat assemble --plan <plan> [--declarations <yaml>] --out subjects.json`
+(same plan format as `correlate`; output is the exact fixture shape `ledger-run` and
+the dashboard read), and into the API via `ECDAT_SUBJECTS_PATH`, with `/api/health`
+reporting `fixture: false` so the dashboard's "Fixture data" banner is shown only
+when it is true. Verified end to end through the real CLI: 2 recorded scans → 7
+subjects → `ledger-run` under two scenarios → `diff` shows the classical-client row
+BLEEDING → SAVABLE; and in the browser: banner reads "Scan data", rows are the
+assembled ones.
+
+Also fixed on the way: `ecdat diff` now exits 2 with a message on a malformed run
+id instead of a traceback; `test_source_text_is_never_carried_into_a_finding` now
+checks the actual matched lines Semgrep echoed rather than the proxy word
+`MessageDigest` (a stricter check — the class name is a metavariable capture, not
+source text).
+
+Tests: `tests/unit/assemble/test_bridge.py` (17, all over real adapter runs).
+577 tests pass; all three CI guards pass.
+
+**Not yet:** the config-chain join (PAY-001's `KeyWrapService` should become an
+INFERRED KEY_TRANSPORT with a conditional band per §6, once the `config-chain-spring`
+resolution is fed to the bridge); multi-run `first_observed` (earliest observation
+across the P13 run store rather than this run's date); image/HSM/KMS/binary
+classifier paths.
