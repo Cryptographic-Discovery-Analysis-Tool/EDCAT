@@ -648,7 +648,7 @@ SIH26164 repos). Each item was checked against the code before being listed.
 |---|---|---|---|
 | **P21** | **Scan → ledger bridge.** Wire `function/classifier.py` (built, never called) so adapter findings become `UsageContext`s; derive `TemporalEvidence` from what adapters actually observe; give data-class binding a declaration input. | No code in `src/` constructs a `LedgerSubject`. Every band the dashboard shows comes from a hand-built fixture. This is the single largest gap. | **done (2026-09-23)** — see below |
 | **P22** | **Sourced Z scenarios and policies.** Cite GRI Quantum Threat Timeline 2025 (pub. 9 Mar 2026) for the Z dates; add India DST roadmap (CII by 2029, inventories by Dec 2027), NIST IR 8547 ipd (deprecate 2030 / disallow 2035), EU roadmap (high-risk by 2030) as selectable policy deadlines. | `data/scenarios.yaml` Z dates are `TEST_CONSTANT`; `crypto_families.yaml` carries a `TODO-VERIFY: cite NIST IR 8547`. | **done (2026-09-23)** — see below |
-| **P23** | **Recommendation corrections.** Public-web TLS server authentication: Chrome has stated it will not accept ML-DSA in X.509 and is backing Merkle Tree Certificates (Let's Encrypt staging late 2026). Add FN-DSA (FIPS 206, draft) and HQC (selected Mar 2025) as flagged-draft options. | `pqc_options.yaml` recommends ML-DSA generically for signatures. | open |
+| **P23** | **Recommendation corrections.** Public-web TLS server authentication: Chrome has stated it will not accept ML-DSA in X.509 and is backing Merkle Tree Certificates (Let's Encrypt staging late 2026). Add FN-DSA (FIPS 206, draft) and HQC (selected Mar 2025) as flagged-draft options. | `pqc_options.yaml` recommends ML-DSA generically for signatures. | **done (2026-09-23)** — see below; FN-DSA/HQC part corrected |
 | **P24** | **Performance.** Evaluate a run once per request set, cache per (subjects, scenario, policy, as_of); compute scenario sensitivity from the three cached runs instead of 3× re-evaluation per row; index the run store. | Dashboard triggers 3 full ledger runs + 3× per-row sensitivity per page load; `list_runs` reads every run file in full. | open |
 | **P25** | **SARIF output + CI gate.** `ecdat ledger-run --sarif`, and a gate that fails a pipeline on BLEEDING / REGRESSED rows. | A competing SIH26164 repo ships both; cheap, and it is how the tool fits a developer workflow. | open |
 | **P26** | **CycloneDX 1.7.** Vendor the 1.7 schema (ECMA-424 2nd ed.), move export to 1.7, keep 1.6 import. | 1.7 released Oct 2025; EO 14412 CBOM minimum elements due ~Mar 2027. | open |
@@ -754,3 +754,57 @@ Timeline Report 2025* (9 Mar 2026, publication page).
 vendors" from FY2027–28 (p. 106). That is the document this tool exports.
 
 Tests: `tests/unit/risk/test_policy.py` (10). 587 tests pass; all three CI guards pass.
+
+#### P22 addendum (same day) — the two "recorded, not applied" items, now applied
+
+- **NIST 112-bit deprecation.** IR 8547 defers "security level" to SP 800-57, so two
+  more NIST sources were vendored: SP 800-57 Pt 1 Rev 5 Table 2 (RSA k=2048 → 112,
+  k=3072 → 128; FFC likewise) and SP 800-186 Table 1 (P-256, Curve25519,
+  Edwards25519 → 128; P-384 → 192; P-224 → 112). New `data/security_strength.yaml`.
+  The "Deprecated after 2030" milestone now carries `applies_at_strength: 112`: it
+  is `not_applicable` to a 128-bit X25519/P-256 row, `open` for a 112-bit one, and
+  `undetermined` for RSA/DH — their strength depends on a key size no row carries
+  yet, so it is not guessed. SP 800-186 is used for the curves on purpose: SP
+  800-57's field-size column alone would put Curve25519 (255-bit field) at 112.
+- **EU roadmap.** The PDF (v1.1, 11.06.2025) is now fetched and vendored. Its
+  per-use-case rule — quantum-vulnerable public key "shall not be used stand-alone
+  after the end of 2030" for high-risk, 2035 for medium-risk — is carried as two
+  policies, `EU_HIGH_RISK` and `EU_MEDIUM_RISK`. The roadmap derives risk level from
+  a score the organisation computes (p. 10); this tool computes no score (§5.12), so
+  the level is the operator's to state, as with India CII vs Enterprise.
+  "Stand-alone" matches the existing `met` rule: an observed migration with
+  classical refused.
+- `crypto_families.yaml` gains P-224, P-384, P-521, X448, Ed25519 as Shor-broken,
+  each cited to the IR 8547 table row that lists it. Found because a P-224 test
+  correctly came back `undetermined` — the family had no row.
+
+591 tests pass; all three CI guards pass.
+
+### P23 — Recommendation corrections — **done (2026-09-23), with one correction to this plan**
+
+**Public-web TLS certificates.** Every TLS server-certificate signature context
+(the classifier names it "<suite> server certificate") now carries a caveat on its
+ML-DSA option, sourced to Google's Feb 2026 post — "Chrome has no immediate plan to
+add traditional X.509 certificates containing post-quantum cryptography to the
+Chrome Root Store"; MTCs instead, Phase 2 Q1 2027, Phase 3 Q3 2027 — and Let's
+Encrypt's 3 Jun 2026 post (MTC staging late 2026, production 2027). Worded
+conditionally ("If this is a publicly trusted certificate") because public vs
+private trust is not observable from a handshake, and it says ML-DSA X.509 (RFC
+9881) remains the option for private PKI. Other signatures are untouched. Verified
+live on the P21 scan data in the "Move to" tab.
+
+**FN-DSA / HQC — this plan's row was wrong, and the code follows the canon
+instead.** The row said "add FN-DSA and HQC as flagged-draft options". The Final
+Architecture (Part 8, which outranks this file) records both as never
+recommended until they are standards, and
+`test_draft_standards_are_never_recommended` enforces it — it failed when the
+options were added, which is how the conflict surfaced. What Part 8 and Lock §9
+actually ask for is a *status recheck before finals*; that is what was done: NIST's
+project page still says FIPS 206 is "in development" (its IPD page returned 404
+on 2026-09-23), and HQC's standard is not published. Both `standards_status` rows
+now carry `rechecked: 2026-09-23` with those sources, and stay `usable: false`.
+
+Sources vendored: `Google_Chrome_MTC_2026.md`, `LetsEncrypt_PQ_Certs_2026.md`,
+`NIST_HQC_Selection_2025.md`, `NIST_PQC_Standardization_Status_2026.md`.
+Tests: 3 new in `tests/unit/recommend/test_engine.py`. 594 tests pass; all three CI
+guards pass.

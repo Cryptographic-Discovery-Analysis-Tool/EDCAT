@@ -64,36 +64,45 @@ policies:
     applies_to: quantum_vulnerable
     usable: true
     citation: "docs/sources/NIST_IR_8547_ipd.md -- Tables 2 and 4"
-    quote: "≥ 128 bits of security strength | Disallowed after 2035"
-    note: >-
-      Only the "Disallowed after 2035" milestone is applied: it covers every
-      quantum-vulnerable family at every strength in Tables 2 and 4. The
-      "Deprecated after 2030" milestone applies to 112-bit strength only, and
-      no ledger row carries a security strength today, so applying it would
-      mean guessing one. It is recorded below as not applied, not dropped.
+    quote: "112 bits of security strength | Deprecated after 2030; Disallowed after 2035"
     milestones:
+      - key: deprecated_112
+        label: "Deprecated (112-bit strength)"
+        date: 2030-12-31
+        quote: "112 bits of security strength | Deprecated after 2030"
+        # Applies only at the 112-bit level. Strength comes from
+        # data/security_strength.yaml (SP 800-57 Table 2, SP 800-186 Table 1);
+        # a row whose strength is not known is "undetermined", never assumed.
+        applies_at_strength: 112
       - key: disallowed
         label: "Disallowed"
         date: 2035-12-31
-        quote: "Disallowed after 2035"
+        quote: "≥ 128 bits of security strength | Disallowed after 2035"
 
-  - key: NIST_IR_8547_IPD_DEPRECATE_112
-    label: "NIST IR 8547 (ipd) -- 112-bit deprecation"
-    usable: false
-    status: NOT_APPLICABLE_WITHOUT_STRENGTH
-    citation: "docs/sources/NIST_IR_8547_ipd.md -- Tables 2 and 4"
-    why_not_usable: >-
-      "Deprecated after 2030" applies to 112-bit strength (e.g. RSA-2048) only.
-      Ledger rows carry an algorithm family, not a key size or strength, so
-      there is no honest way to decide which rows it applies to yet.
+  - key: EU_HIGH_RISK
+    label: "EU coordinated roadmap -- high-risk use cases"
+    applies_to: quantum_vulnerable
+    usable: true
+    citation: "docs/sources/EU_PQC_Coordinated_Roadmap_2025.md -- PDF pp. 6-7"
+    quote: "For high-risk use cases, quantum-vulnerable public-key mechanisms shall not be used stand-alone after the end of 2030"
+    note: >-
+      Risk level is the operator's classification (the roadmap derives it from
+      a quantum risk score the organisation computes, p. 10; this tool computes
+      no score). Apply this policy to use cases the operator classes high-risk.
+    milestones:
+      - key: no_standalone_classical
+        label: "No stand-alone quantum-vulnerable public key"
+        date: 2030-12-31
+        quote: "By 31.12.2030: ... The PQC transition for high-risk use cases has been completed."
 
-  - key: EU_COORDINATED_ROADMAP_2025
-    label: "EU coordinated implementation roadmap"
-    usable: false
-    status: SOURCE_NOT_VENDORED
-    citation: "https://digital-strategy.ec.europa.eu/en/library/coordinated-implementation-roadmap-transition-post-quantum-cryptography"
-    why_not_usable: >-
-      The Commission's page (23 June 2025) links the roadmap PDF but does not
-      state the milestone dates itself; the PDF has not been fetched and
-      vendored, so no date is quoted from it. Secondary sources give "high-risk
-      use cases by end of 2030" -- not adopted until read off the primary text.
+  - key: EU_MEDIUM_RISK
+    label: "EU coordinated roadmap -- medium-risk use cases"
+    applies_to: quantum_vulnerable
+    usable: true
+    citation: "docs/sources/EU_PQC_Coordinated_Roadmap_2025.md -- PDF pp. 6-7"
+    quote: "analogously after the end of 2035 for medium-risk use cases"
+    milestones:
+      - key: no_standalone_classical
+        label: "No stand-alone quantum-vulnerable public key"
+        date: 2035-12-31
+        quote: "By 31.12.2035: • The PQC transition for medium-risk use cases has been completed."

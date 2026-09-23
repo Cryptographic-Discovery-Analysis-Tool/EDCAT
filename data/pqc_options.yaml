@@ -84,6 +84,23 @@ options:
   # question and not an algorithm replacement. A row invented here would
   # produce a confident recommendation from a purpose Part 8 does not cover.
 
+# --- context-specific caveats (P23) ------------------------------------------
+
+caveats:
+  - key: webpki_tls_server_certificate
+    applies_to: SIGNATURE_AUTH
+    usable: true
+    citation: "docs/sources/Google_Chrome_MTC_2026.md"
+    quote: "Chrome has no immediate plan to add traditional X.509 certificates containing post-quantum cryptography to the Chrome Root Store."
+    text: >-
+      If this is a publicly trusted certificate (WebPKI), an ML-DSA X.509
+      certificate is not the path browsers plan to trust: Chrome is building a
+      root store for Merkle Tree Certificates instead (Phase 2 Q1 2027,
+      Phase 3 Q3 2027), and Let's Encrypt targets MTC staging in late 2026 and
+      production in 2027. ML-DSA in X.509 (RFC 9881) remains the option for
+      private PKI and internal service-to-service TLS.
+    extra_citation: "docs/sources/LetsEncrypt_PQ_Certs_2026.md"
+
 # --- why hybrid on one clock and not the other ------------------------------
 
 hybrid_rationale:
@@ -203,18 +220,27 @@ standards_status:
     quote: "FIPS 203 / 204 / 205 finalised **13 Aug 2024**."
 
   - key: fips_206_fn_dsa
-    status: DRAFT
+    status: IN_DEVELOPMENT
     usable: false
     citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'Standards status'"
+    rechecked: 2026-09-23
+    recheck_citation: "docs/sources/NIST_PQC_Standardization_Status_2026.md"
+    recheck_quote: "FALCON was also selected and will be published in FIPS 206 (in development)."
     why_not_usable: >-
-      FIPS 206 (FN-DSA, Falcon-based) is still draft, so it is recorded and
-      never recommended. Lock §9 also lists "FIPS 206 / HQC status recheck
-      before finals" as an open action.
+      FIPS 206 (FN-DSA, Falcon-based) is not a published standard, so it is
+      recorded and never recommended (Part 8). Lock §9's "FIPS 206 / HQC status
+      recheck before finals" was done 2026-09-23: NIST's project page still says
+      "in development", and the FIPS 206 initial-public-draft page returned 404.
 
   - key: hqc_backup_kem
     status: SELECTED_STANDARD_IN_DEVELOPMENT
     usable: false
     citation: "docs/architecture/ECDAT_Final_Architecture.md Part 8, 'Standards status'"
+    rechecked: 2026-09-23
+    recheck_citation: "docs/sources/NIST_HQC_Selection_2025.md"
+    recheck_quote: "the final version will be published in approximately two years."
     why_not_usable: >-
-      HQC was selected March 2025 as a code-based backup KEM but the standard
-      is still in development. Recorded so its absence is deliberate.
+      HQC was selected 11 March 2025 as "the second PQC key-encapsulation
+      mechanism (KEM), following ML-KEM", but no HQC standard is published.
+      Rechecked 2026-09-23 (Lock §9); still recorded so its absence is
+      deliberate, never recommended until a final standard exists.

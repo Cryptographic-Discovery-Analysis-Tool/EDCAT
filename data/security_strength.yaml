@@ -1,0 +1,70 @@
+# Classical security strength per algorithm family (build-plan.md P22).
+#
+# Needed for one thing: NIST IR 8547 ipd deprecates quantum-vulnerable schemes
+# "at the 112-bit security level" after 2030, and a row can only be judged
+# against that if its strength is known. Strength here is the CLASSICAL
+# figure; against a quantum adversary every row below is broken regardless
+# (SP 800-57's own footnote). It never moves a band.
+#
+# Only families whose strength is fixed by the family name are listed. RSA and
+# finite-field DH depend on key size, which no ledger row carries yet, so they
+# have no row here and resolve to "undetermined" rather than to a guessed size.
+schema_version: 1
+
+families:
+  - key: X25519
+    strength_bits: 128
+    usable: true
+    citation: "docs/sources/NIST_SP_800-186.md -- Table 1"
+    quote: "128 | P-256, W-25519, Curve25519, Edwards25519, K-283, B-283"
+  - key: Ed25519
+    strength_bits: 128
+    usable: true
+    citation: "docs/sources/NIST_SP_800-186.md -- Table 1"
+    quote: "128 | P-256, W-25519, Curve25519, Edwards25519, K-283, B-283"
+  - key: P-256
+    strength_bits: 128
+    usable: true
+    citation: "docs/sources/NIST_SP_800-186.md -- Table 1"
+    quote: "128 | P-256, W-25519, Curve25519, Edwards25519, K-283, B-283"
+  - key: P-384
+    strength_bits: 192
+    usable: true
+    citation: "docs/sources/NIST_SP_800-186.md -- Table 1"
+    quote: "192 | P-384, K-409, B-409"
+  - key: P-521
+    strength_bits: 256
+    usable: true
+    citation: "docs/sources/NIST_SP_800-186.md -- Table 1"
+    quote: "256 | P-521, K-571, B-571"
+  - key: X448
+    strength_bits: 224
+    usable: true
+    citation: "docs/sources/NIST_SP_800-186.md -- Table 1"
+    quote: "224 | W-448, Curve448, Edwards448, E448"
+  - key: P-224
+    strength_bits: 112
+    usable: true
+    citation: "docs/sources/NIST_SP_800-186.md -- Table 1"
+    quote: "112 | P-224, K-233, B-233"
+
+# By key size, for when a row does carry one (not yet -- see header).
+by_key_size:
+  - key: RSA
+    usable: true
+    citation: "docs/sources/NIST_SP_800-57pt1r5.md -- Table 2, IFC (RSA) column"
+    quote: "112 | k = 2048 ; 128 | k = 3072 ; 192 | k = 7680 ; 256 | k = 15360"
+    bands:
+      - {min_bits: 2048, strength_bits: 112}
+      - {min_bits: 3072, strength_bits: 128}
+      - {min_bits: 7680, strength_bits: 192}
+      - {min_bits: 15360, strength_bits: 256}
+  - key: DH
+    usable: true
+    citation: "docs/sources/NIST_SP_800-57pt1r5.md -- Table 2, FFC (DSA, DH, MQV) column"
+    quote: "112 | L = 2048, N = 224 ; 128 | L = 3072, N = 256"
+    bands:
+      - {min_bits: 2048, strength_bits: 112}
+      - {min_bits: 3072, strength_bits: 128}
+      - {min_bits: 7680, strength_bits: 192}
+      - {min_bits: 15360, strength_bits: 256}

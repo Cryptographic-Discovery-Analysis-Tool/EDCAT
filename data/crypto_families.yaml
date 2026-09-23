@@ -36,6 +36,36 @@ families:
     citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 4"
     quote: "P-256 ECDHE, X=1y | central: SAVABLE (deadline 2035)"
 
+  - key: P-224
+    shor_broken: true
+    usable: true
+    citation: "docs/sources/NIST_IR_8547_ipd.md -- Tables 2 and 4 (ECDSA; Elliptic Curve DH)"
+    quote: "ECDSA [FIPS186] | 112 bits of security strength | Deprecated after 2030; Disallowed after 2035"
+
+  - key: P-384
+    shor_broken: true
+    usable: true
+    citation: "docs/sources/NIST_IR_8547_ipd.md -- Tables 2 and 4 (ECDSA; Elliptic Curve DH)"
+    quote: "ECDSA [FIPS186] | ≥ 128 bits of security strength | Disallowed after 2035"
+
+  - key: P-521
+    shor_broken: true
+    usable: true
+    citation: "docs/sources/NIST_IR_8547_ipd.md -- Tables 2 and 4 (ECDSA; Elliptic Curve DH)"
+    quote: "ECDSA [FIPS186] | ≥ 128 bits of security strength | Disallowed after 2035"
+
+  - key: X448
+    shor_broken: true
+    usable: true
+    citation: "docs/sources/NIST_IR_8547_ipd.md -- Table 4 (Elliptic Curve DH)"
+    quote: "Elliptic Curve DH and MQC [SP80056A] | ≥ 128 bits of security strength | Disallowed after 2035"
+
+  - key: Ed25519
+    shor_broken: true
+    usable: true
+    citation: "docs/sources/NIST_IR_8547_ipd.md -- Table 2 (EdDSA)"
+    quote: "EdDSA [FIPS186] | ≥ 128 bits of security strength | Disallowed after 2035"
+
   - key: ML-KEM
     shor_broken: false
     usable: true

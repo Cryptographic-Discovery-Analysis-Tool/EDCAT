@@ -30,9 +30,7 @@ def _by(annotations, policy, milestone):
 
 def test_only_usable_cited_policies_load():
     keys = {p.key for p in load_policies()}
-    assert keys == {"IN_DST_CII", "IN_DST_ENTERPRISE", "NIST_IR_8547_IPD"}
-    assert "EU_COORDINATED_ROADMAP_2025" not in keys, "EU roadmap is not vendored yet"
-    assert "NIST_IR_8547_IPD_DEPRECATE_112" not in keys, "needs a key strength no row carries"
+    assert keys == {"IN_DST_CII", "IN_DST_ENTERPRISE", "NIST_IR_8547_IPD", "EU_HIGH_RISK", "EU_MEDIUM_RISK"}
 
 
 def test_india_cii_dates_are_the_roadmaps_own():
@@ -87,3 +85,30 @@ def test_programme_milestones_are_never_laid_over_a_row():
     annotations = annotate(_record("X25519"))
     assert not [a for a in annotations if a.milestone_key == "foundations"]
     assert _by(annotations, "IN_DST_CII", "high_priority").status == PolicyStatus.OPEN
+
+
+def test_nist_112_bit_deprecation_does_not_bind_a_128_bit_curve():
+    """X25519 is 128-bit (SP 800-186 Table 1): only "Disallowed after 2035" binds."""
+    annotations = annotate(_record("X25519"))
+    assert _by(annotations, "NIST_IR_8547_IPD", "deprecated_112").status == PolicyStatus.NOT_APPLICABLE
+    assert _by(annotations, "NIST_IR_8547_IPD", "disallowed").status == PolicyStatus.OPEN
+
+
+def test_nist_112_bit_deprecation_binds_p224():
+    """P-224 is 112-bit (SP 800-186 Table 1)."""
+    assert _by(annotate(_record("P-224")), "NIST_IR_8547_IPD", "deprecated_112").status == PolicyStatus.OPEN
+
+
+def test_rsa_without_a_key_size_is_undetermined_for_the_112_bit_rule():
+    """RSA's strength depends on its key size (SP 800-57 Table 2), which no row
+    carries yet -- so the 2030 rule cannot be decided, and is not guessed."""
+    annotations = annotate(_record("RSA"))
+    assert _by(annotations, "NIST_IR_8547_IPD", "deprecated_112").status == PolicyStatus.UNDETERMINED
+    assert _by(annotations, "NIST_IR_8547_IPD", "disallowed").status == PolicyStatus.OPEN
+
+
+def test_eu_high_and_medium_risk_deadlines():
+    annotations = annotate(_record("X25519"))
+    assert _by(annotations, "EU_HIGH_RISK", "no_standalone_classical").deadline == date(2030, 12, 31)
+    assert _by(annotations, "EU_MEDIUM_RISK", "no_standalone_classical").deadline == date(2035, 12, 31)
+    assert _by(annotations, "EU_HIGH_RISK", "no_standalone_classical").status == PolicyStatus.OPEN
