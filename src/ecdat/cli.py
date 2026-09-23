@@ -70,7 +70,8 @@ from ecdat.risk.scenarios import (
     Scenario,
 )
 from ecdat.context.binding import Lifetime
-from ecdat.store import DiffClass, JsonlRunStore, NoSuchRunError, Run
+from ecdat.assemble import Declarations, assemble
+from ecdat.store import DiffClass, InvalidRunIdError, JsonlRunStore, NoSuchRunError, Run
 from ecdat.store.diff import diff_runs
 from ecdat.export.signing import (
     MissingSignatureError,
@@ -635,17 +636,20 @@ def _graph_document(graph: EvidenceGraph) -> dict[str, Any]:
     }
 
 
-def _correlate(args: argparse.Namespace) -> int:
+def _run_plan(plan_path: str) -> list[AdapterRunResult] | int:
+    """Run every scan spec in a JSON plan file. Returns the results, or an
+    exit code (after printing why) when the plan cannot be run. Shared by
+    `correlate` and `assemble` so a plan means the same thing to both."""
     try:
-        plan = json.loads(Path(args.plan).read_text(encoding="utf-8"))
+        plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
     except OSError as exc:
-        print(f"could not read plan file {args.plan!r}: {type(exc).__name__}", file=sys.stderr)
+        print(f"could not read plan file {plan_path!r}: {type(exc).__name__}", file=sys.stderr)
         return 2
     except json.JSONDecodeError as exc:
-        print(f"plan file {args.plan!r} is not valid JSON: {exc}", file=sys.stderr)
+        print(f"plan file {plan_path!r} is not valid JSON: {exc}", file=sys.stderr)
         return 2
     if not isinstance(plan, list) or not plan:
-        print(f"plan file {args.plan!r} must be a non-empty JSON list of scan specs", file=sys.stderr)
+        print(f"plan file {plan_path!r} must be a non-empty JSON list of scan specs", file=sys.stderr)
         return 2
 
     results: list[AdapterRunResult] = []
@@ -668,6 +672,39 @@ def _correlate(args: argparse.Namespace) -> int:
             print(f"plan entry {index} ({entry_args.adapter}): {exc}", file=sys.stderr)
             return 2
         results.append(adapter.run(target))
+    return results
+
+
+def _assemble(args: argparse.Namespace) -> int:
+    """build-plan.md P21: scans -> ledger subjects, in the exact file shape
+    `ledger-run --subjects` and the dashboard read."""
+    results = _run_plan(args.plan)
+    if isinstance(results, int):
+        return results
+    try:
+        declarations = Declarations.load(args.declarations) if args.declarations else Declarations()
+    except (OSError, ValueError) as exc:
+        print(f"declarations file {args.declarations!r}: {exc}", file=sys.stderr)
+        return 2
+
+    assembly = assemble(results, declarations=declarations)
+    Path(args.out).write_text(
+        json.dumps(assembly.to_subjects_document(), indent=2) + "\n", encoding="utf-8"
+    )
+    declared = sum(1 for s in assembly.subjects if s.binding_key)
+    print(
+        f"{len(results)} scan(s) -> {len(assembly.subjects)} ledger subject(s) "
+        f"({declared} with a declared data class), {len(assembly.unassembled)} unassembled -> {args.out}"
+    )
+    for item in assembly.unassembled:
+        print(f"  unassembled [{item.adapter_id}] {item.finding_id or '-'}: {item.reason}")
+    return 0
+
+
+def _correlate(args: argparse.Namespace) -> int:
+    results = _run_plan(args.plan)
+    if isinstance(results, int):
+        return results
 
     try:
         report = correlate(results)
@@ -791,7 +828,7 @@ def _diff(args: argparse.Namespace) -> int:
     try:
         old = store.load(getattr(args, "from"))
         new = store.load(args.to)
-    except NoSuchRunError as exc:
+    except (NoSuchRunError, InvalidRunIdError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
@@ -1087,6 +1124,18 @@ def main(argv: list[str] | None = None) -> int:
     diff_parser.add_argument("--show-unchanged", action="store_true")
     diff_parser.add_argument("--json", action="store_true")
     diff_parser.set_defaults(func=_diff)
+
+    assemble_parser = subparsers.add_parser(
+        "assemble",
+        help="run a scan plan and turn the findings into ledger subjects (build-plan.md P21)",
+    )
+    assemble_parser.add_argument("--plan", required=True, help="the same JSON plan `correlate` reads")
+    assemble_parser.add_argument(
+        "--declarations",
+        help="YAML of data-class declarations: bindings: [{surface|asset, data_class, declared_by}]",
+    )
+    assemble_parser.add_argument("--out", required=True, help="write the subjects file here")
+    assemble_parser.set_defaults(func=_assemble)
 
     keygen_parser = subparsers.add_parser(
         "keygen", help="generate an Ed25519 signing key for signed CBOM export (OI-013)"

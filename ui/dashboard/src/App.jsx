@@ -36,6 +36,16 @@ export default function App() {
   const [data, setData] = useState({ ledger: null, closure: null, coverage: null })
   const [recommendations, setRecommendations] = useState(null)
   const [graph, setGraph] = useState(null)
+  const [fixture, setFixture] = useState(true)
+
+  // P21: the banner is only true when the API is actually serving the
+  // hand-built fixture; `ecdat assemble` output is real scan evidence.
+  useEffect(() => {
+    apiFetch('api/health')
+      .then((r) => r.json())
+      .then((h) => setFixture(h.fixture !== false))
+      .catch(() => {})
+  }, [])
   const [selected, setSelected] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -157,12 +167,18 @@ export default function App() {
       />
 
       <main className="main">
-        <div className="banner">
-          <strong>Fixture data.</strong> No sensor has run. These rows are
-          constructed evidence used to exercise every band while the live
-          connection prober is still being built &mdash; nothing here was
-          observed on a real network.
-        </div>
+        {fixture ? (
+          <div className="banner">
+            <strong>Fixture data.</strong> No sensor has run. These rows are
+            constructed evidence used to exercise every band &mdash; nothing
+            here was observed on a real network.
+          </div>
+        ) : (
+          <div className="banner">
+            <strong>Scan data.</strong> Rows assembled from adapter runs; data
+            classes are as declared by the operator.
+          </div>
+        )}
 
         <div className="tabs">
           {TABS.map(([id, label]) => (

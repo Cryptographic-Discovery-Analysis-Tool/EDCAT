@@ -29,6 +29,33 @@ export const Status = ({ value }) => (
 // then longest window). This component does not sort them -- re-sorting here
 // would silently replace the ranking the ledger is accountable for.
 
+
+// P22: the nearest milestone this row has NOT met, across every cited policy.
+// A regulator's date never changes the band; it is shown beside it. Hover
+// lists every policy and milestone with its status and source.
+function PolicyCell({ deadlines }) {
+  if (deadlines.length === 0) return <span className="faint">—</span>
+  const title = deadlines
+    .map((d) => `${d.policy_label} · ${d.milestone_label}: ${d.deadline} (${d.status})`)
+    .join('\n')
+  const open = deadlines
+    .filter((d) => d.status === 'open')
+    .sort((a, b) => a.deadline.localeCompare(b.deadline))
+  if (open.length > 0) {
+    const d = open[0]
+    return (
+      <span title={title}>
+        <span className="badge badge-sensitive">{d.deadline}</span>
+        <div className="faint">{d.policy_label.replace('India DST roadmap -- ', 'India ')} · {d.milestone_label}</div>
+      </span>
+    )
+  }
+  if (deadlines.every((d) => d.status === 'met')) return <span title={title}>met</span>
+  if (deadlines.some((d) => d.status === 'undetermined'))
+    return <span className="faint" title={title}>undetermined</span>
+  return <span className="faint" title={title}>not applicable</span>
+}
+
 export default function Ledger({ data, onSelect }) {
   return (
     <>
@@ -50,6 +77,7 @@ export default function Ledger({ data, onSelect }) {
             <th>Exposed window</th>
             <th>Deadline</th>
             <th>Under other Z</th>
+            <th>Policy deadline</th>
           </tr>
         </thead>
         <tbody>
@@ -107,6 +135,9 @@ export default function Ledger({ data, onSelect }) {
                 ) : (
                   <span className="faint">stable across Z</span>
                 )}
+              </td>
+              <td className="small">
+                <PolicyCell deadlines={row.policy_deadlines || []} />
               </td>
             </tr>
           ))}

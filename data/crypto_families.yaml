@@ -47,16 +47,13 @@ families:
 
   - key: DH
     shor_broken: true
-    usable: false
-    status: NOT_STATED_IN_REPO
-    citation: "docs/architecture/Pramana_Ledger_Spec.md -- searched, no row"
-    why_not_usable: >-
-      Finite-field Diffie-Hellman appears in no frozen test row and in no
-      in-repo table. It is universally taken to be Shor-broken, but this
-      registry does not accept "universally taken to be": a context whose
-      family resolves to DH gets function KEY_ESTABLISHMENT and an UNBOUNDED
-      band with a closure task, not a guessed SAFE or a guessed BLEEDING.
-      TODO-VERIFY: cite NIST IR 8547 once it is vendored into docs/.
+    usable: true
+    citation: "docs/sources/NIST_IR_8547_ipd.md -- Table 4, quantum-vulnerable key-establishment schemes"
+    quote: "Finite Field DH and MQV [SP80056A] | 112 bits of security strength | Deprecated after 2030; Disallowed after 2035"
+    note: >-
+      Resolved 2026-09-23. Was usable:false pending exactly this citation
+      ("TODO-VERIFY: cite NIST IR 8547 once it is vendored into docs/").
+      Table 4 lists finite-field DH as quantum-vulnerable at every strength.
 
 # Groups negotiated on the wire that are hybrid key establishment.
 hybrid_groups:

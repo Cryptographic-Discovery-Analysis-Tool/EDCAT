@@ -1,0 +1,99 @@
+# Regulatory / programme migration deadlines (build-plan.md P22).
+#
+# These are NOT Z. Z (data/scenarios.yaml) is when a quantum computer is
+# assumed to arrive; a policy deadline is when an authority says migration
+# must be done, whether or not Z has arrived. The ledger's bands never read
+# this file -- `risk/policy.py` lays these dates over a row as an annotation
+# ("open / met / undetermined against India CII full migration, 2029-12-31"),
+# so a band cannot move because a regulator published a date.
+#
+# Same citation rule as every other registry: usable rows cite a non-empty
+# in-repo file (docs/sources/, vendored excerpts with the fetched PDF's
+# SHA-256) and quote the sentence that states the date.
+schema_version: 1
+
+policies:
+  - key: IN_DST_CII
+    label: "India DST roadmap -- Critical Information Infrastructure"
+    applies_to: quantum_vulnerable
+    usable: true
+    citation: "docs/sources/India_DST_Quantum_Safe_Roadmap_2026.md -- printed pp. 105-107"
+    quote: "Milestone 3: Full Migration – (CII : 31 December 2029, Enterprises: No later than 31 December 2033)"
+    milestones:
+      - key: foundations
+        label: "Building the foundations (inventory, CBOM requests)"
+        # Programme-level: inventory, CBOM requests, pilots. Not something a
+        # single key meets or misses, so risk/policy.py never lays it on a row.
+        scope: programme
+        date: 2027-12-31
+        quote: "Milestone 1: Building the Foundations - (CII: No later than 31 December 2027, Enterprises: No later than 31 December 2028)"
+      - key: high_priority
+        label: "High-priority systems migrated"
+        date: 2028-12-31
+        quote: "Milestone 2: Migration of High-Priority Systems – (CII: 31 December 2028, Enterprises: No later than 31 December 2030)"
+      - key: full_migration
+        label: "Full migration"
+        date: 2029-12-31
+        quote: "Milestone 3: Full Migration – (CII : 31 December 2029, Enterprises: No later than 31 December 2033)"
+
+  - key: IN_DST_ENTERPRISE
+    label: "India DST roadmap -- Enterprises"
+    applies_to: quantum_vulnerable
+    usable: true
+    citation: "docs/sources/India_DST_Quantum_Safe_Roadmap_2026.md -- printed pp. 105-107"
+    quote: "Milestone 3: Full Migration – (CII : 31 December 2029, Enterprises: No later than 31 December 2033)"
+    milestones:
+      - key: foundations
+        label: "Building the foundations (inventory, CBOM requests)"
+        # Programme-level: inventory, CBOM requests, pilots. Not something a
+        # single key meets or misses, so risk/policy.py never lays it on a row.
+        scope: programme
+        date: 2028-12-31
+        quote: "Milestone 1: Building the Foundations - (CII: No later than 31 December 2027, Enterprises: No later than 31 December 2028)"
+      - key: high_priority
+        label: "High-priority systems migrated"
+        date: 2030-12-31
+        quote: "Milestone 2: Migration of High-Priority Systems – (CII: 31 December 2028, Enterprises: No later than 31 December 2030)"
+      - key: full_migration
+        label: "Full migration"
+        date: 2033-12-31
+        quote: "Milestone 3: Full Migration – (CII : 31 December 2029, Enterprises: No later than 31 December 2033)"
+
+  - key: NIST_IR_8547_IPD
+    label: "NIST IR 8547 (initial public draft)"
+    applies_to: quantum_vulnerable
+    usable: true
+    citation: "docs/sources/NIST_IR_8547_ipd.md -- Tables 2 and 4"
+    quote: "≥ 128 bits of security strength | Disallowed after 2035"
+    note: >-
+      Only the "Disallowed after 2035" milestone is applied: it covers every
+      quantum-vulnerable family at every strength in Tables 2 and 4. The
+      "Deprecated after 2030" milestone applies to 112-bit strength only, and
+      no ledger row carries a security strength today, so applying it would
+      mean guessing one. It is recorded below as not applied, not dropped.
+    milestones:
+      - key: disallowed
+        label: "Disallowed"
+        date: 2035-12-31
+        quote: "Disallowed after 2035"
+
+  - key: NIST_IR_8547_IPD_DEPRECATE_112
+    label: "NIST IR 8547 (ipd) -- 112-bit deprecation"
+    usable: false
+    status: NOT_APPLICABLE_WITHOUT_STRENGTH
+    citation: "docs/sources/NIST_IR_8547_ipd.md -- Tables 2 and 4"
+    why_not_usable: >-
+      "Deprecated after 2030" applies to 112-bit strength (e.g. RSA-2048) only.
+      Ledger rows carry an algorithm family, not a key size or strength, so
+      there is no honest way to decide which rows it applies to yet.
+
+  - key: EU_COORDINATED_ROADMAP_2025
+    label: "EU coordinated implementation roadmap"
+    usable: false
+    status: SOURCE_NOT_VENDORED
+    citation: "https://digital-strategy.ec.europa.eu/en/library/coordinated-implementation-roadmap-transition-post-quantum-cryptography"
+    why_not_usable: >-
+      The Commission's page (23 June 2025) links the roadmap PDF but does not
+      state the milestone dates itself; the PDF has not been fetched and
+      vendored, so no date is quoted from it. Secondary sources give "high-risk
+      use cases by end of 2030" -- not adopted until read off the primary text.

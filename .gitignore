@@ -15,3 +15,26 @@ out/
 # Dashboard build output and deps (rebuilt by the packaging step)
 ui/dashboard/node_modules/
 ui/dashboard/dist/
+
+# --- secrets and runtime artefacts: never commit ---------------------------
+# Signing keys (ecdat keygen). Test fixture certificates stay tracked.
+*.pem
+*.key
+*.p12
+*.pfx
+!tests/fixtures/**/*.pem
+!tests/fixtures/**/*.p12
+# Environment files carrying ECDAT_API_TOKENS / ECDAT_SIGNING_KEY_PATH
+.env
+.env.*
+# Audit logs and run stores written by the API / `ecdat ledger-run`
+*.audit.jsonl
+audit/
+runs/
+.ecdat/
+# Signed or unsigned CBOM exports produced locally
+pramana-cbom*.json
+# Local scratch and notes
+scratch/
+notes/
+*.local.md

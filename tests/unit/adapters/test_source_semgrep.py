@@ -307,10 +307,19 @@ def test_source_text_is_never_carried_into_a_finding(tier_a):
     """Semgrep echoes the matched source line. It is used transiently to tell a
     propagated value from a written one, then dropped: source text is how key
     material would leak into the store, the CLI and snapshots."""
+    # Checked against the actual matched lines Semgrep echoed, not a proxy
+    # word: a structured token such as `api_class = "MessageDigest"` (P21) is
+    # a metavariable capture, like `algorithm = "MD5"`, not source text.
+    raw = json.loads(TIER_A.read_text(encoding="utf-8"))
+    matched_lines = [
+        r["extra"]["lines"].strip() for r in raw["results"] if r.get("extra", {}).get("lines", "").strip()
+    ]
+    assert matched_lines, "fixture must carry matched lines for this test to mean anything"
     for finding in tier_a.findings:
         rendered = json.dumps({k: str(v.value) for k, v in finding.fields.items()})
         assert "getInstance" not in rendered
-        assert "MessageDigest" not in rendered
+        for line in matched_lines:
+            assert line not in rendered
 
 
 def test_output_of_an_unrecorded_tool_version_is_refused():

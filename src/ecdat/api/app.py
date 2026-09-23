@@ -17,6 +17,7 @@ Two deliberate awkwardnesses, both there to keep assumptions visible:
 from __future__ import annotations
 
 import json
+import os
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -53,6 +54,7 @@ from ecdat.risk.scenarios import (
     Policy,
     Scenario,
 )
+from ecdat.risk.policy import annotate as annotate_policies
 from ecdat.risk.sensitivity import sensitivity_for
 from ecdat.security.audit import AuditLog, InMemoryAuditLog, Verb, entry_for
 from ecdat.security.auth import AuthError, InsufficientRoleError, Principal, Role, TokenRegistry
@@ -200,6 +202,21 @@ def _row(record: CalculationRecord) -> dict[str, Any]:
         "start_possible": record.start_possible.isoformat() if record.start_possible else None,
         "start_confirmed": record.start_confirmed.isoformat() if record.start_confirmed else None,
         "sensitivity": _sensitivity(record),
+        # P22: regulator deadlines laid over the row. Never moves the band.
+        "policy_deadlines": [
+            {
+                "policy": a.policy_key,
+                "policy_label": a.policy_label,
+                "milestone": a.milestone_key,
+                "milestone_label": a.milestone_label,
+                "deadline": a.deadline.isoformat(),
+                "status": a.status.value,
+                "days_remaining": a.days_remaining,
+                "reason": a.reason,
+                "citation": a.citation,
+            }
+            for a in annotate_policies(record)
+        ],
     }
 
 
@@ -311,7 +328,14 @@ def create_app(
         description="Read API over the exposure ledger. Presentation only.",
         version="0.1.0",
     )
-    provider: SubjectsProvider = subjects_provider or (lambda: load_subjects(DEFAULT_SUBJECTS))
+    #: P21: `ECDAT_SUBJECTS_PATH` points the dashboard at a file produced by
+    #: `ecdat assemble` (real scans) instead of the hand-built fixture. The
+    #: UI's "Fixture data" banner follows `/api/health`'s `fixture` flag, so
+    #: it is shown only when the fixture is actually what is being served.
+    configured_path = os.environ.get("ECDAT_SUBJECTS_PATH")
+    subjects_path = Path(configured_path) if configured_path else DEFAULT_SUBJECTS
+    serving_fixture = subjects_provider is None and subjects_path == DEFAULT_SUBJECTS
+    provider: SubjectsProvider = subjects_provider or (lambda: load_subjects(subjects_path))
     #: Computed once per app instance, not per request -- it runs a real
     #: adapter and the correlation engine, and (like DEFAULT_SUBJECTS) is
     #: fixture data, not a live scan.
@@ -381,7 +405,7 @@ def create_app(
 
     @app.get("/api/health")
     def health() -> dict[str, Any]:
-        return {"status": "ok", "subjects": len(provider())}
+        return {"status": "ok", "subjects": len(provider()), "fixture": serving_fixture}
 
     @app.get("/api/scenarios")
     def scenarios() -> dict[str, Any]:

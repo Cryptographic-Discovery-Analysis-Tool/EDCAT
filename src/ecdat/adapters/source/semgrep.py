@@ -225,6 +225,19 @@ class SemgrepSourceAdapter(Adapter):
         fields["reachable"] = _unknown(evidence_id)
         fields["purpose"] = _unknown(evidence_id)
 
+        # The JCA class at the call site (`Cipher`, `Mac`, `Signature`, ...).
+        # Read from the rule's `$1` capture (metavariable-regex group), which
+        # the recorded 1.99.0 fixture carries; `$CLASS` repeats the token and
+        # is the fallback. P21's bridge needs it: the crypto *function* comes
+        # from which API is called, not from the algorithm string.
+        for result in results:
+            api_class = _metavar(result, "$1") or (
+                (_metavar(result, "$CLASS") or "").split()[:1] or [None]
+            )[0]
+            if api_class:
+                fields["api_class"] = _observed(api_class, evidence_id)
+                break
+
         if _ALGORITHM_LITERAL in rule_ids:
             result = by_rule[_ALGORITHM_LITERAL]
             captured = _metavar(result, "$ALGO")

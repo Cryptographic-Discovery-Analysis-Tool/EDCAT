@@ -635,3 +635,122 @@ appears in a signed document) plus two in `test_app.py`. 560 tests pass (was
 certificate chain, and any JSF algorithm other than Ed25519 (RS*/PS*/ES*/HS*)
 — all real hardening work, out of this close, matching OI-013's own original
 deferral note.
+
+---
+
+## P21–P26 — from the 2026-09-23 review (implementation gaps + external research)
+
+Source: a repo audit plus a web sweep on 2026-09-23 (NIST, CISA/EO 14412,
+India DST, RBI/SEBI, EU, Cloudflare, OpenJDK, sslyze, Let's Encrypt, competing
+SIH26164 repos). Each item was checked against the code before being listed.
+
+| Phase | What | Why now | Status |
+|---|---|---|---|
+| **P21** | **Scan → ledger bridge.** Wire `function/classifier.py` (built, never called) so adapter findings become `UsageContext`s; derive `TemporalEvidence` from what adapters actually observe; give data-class binding a declaration input. | No code in `src/` constructs a `LedgerSubject`. Every band the dashboard shows comes from a hand-built fixture. This is the single largest gap. | **done (2026-09-23)** — see below |
+| **P22** | **Sourced Z scenarios and policies.** Cite GRI Quantum Threat Timeline 2025 (pub. 9 Mar 2026) for the Z dates; add India DST roadmap (CII by 2029, inventories by Dec 2027), NIST IR 8547 ipd (deprecate 2030 / disallow 2035), EU roadmap (high-risk by 2030) as selectable policy deadlines. | `data/scenarios.yaml` Z dates are `TEST_CONSTANT`; `crypto_families.yaml` carries a `TODO-VERIFY: cite NIST IR 8547`. | **done (2026-09-23)** — see below |
+| **P23** | **Recommendation corrections.** Public-web TLS server authentication: Chrome has stated it will not accept ML-DSA in X.509 and is backing Merkle Tree Certificates (Let's Encrypt staging late 2026). Add FN-DSA (FIPS 206, draft) and HQC (selected Mar 2025) as flagged-draft options. | `pqc_options.yaml` recommends ML-DSA generically for signatures. | open |
+| **P24** | **Performance.** Evaluate a run once per request set, cache per (subjects, scenario, policy, as_of); compute scenario sensitivity from the three cached runs instead of 3× re-evaluation per row; index the run store. | Dashboard triggers 3 full ledger runs + 3× per-row sensitivity per page load; `list_runs` reads every run file in full. | open |
+| **P25** | **SARIF output + CI gate.** `ecdat ledger-run --sarif`, and a gate that fails a pipeline on BLEEDING / REGRESSED rows. | A competing SIH26164 repo ships both; cheap, and it is how the tool fits a developer workflow. | open |
+| **P26** | **CycloneDX 1.7.** Vendor the 1.7 schema (ECMA-424 2nd ed.), move export to 1.7, keep 1.6 import. | 1.7 released Oct 2025; EO 14412 CBOM minimum elements due ~Mar 2027. | open |
+
+**Confirmed, no change needed:** sslyze 6.3.0 / 6.3.1 release notes still show
+no ML-KEM / hybrid-group support — OI-017 stands and the two-probe TLS design
+(DEV-004) remains necessary. OpenSSL 3.5 and JDK 27 (JEP 527) now negotiate
+X25519MLKEM768 by default with no application change, which is direct support
+for the rule that only an *observed* negotiation stops the clock.
+
+Order: P21 → P22 → P23 → P24 → P25 → P26.
+
+### P21 — Scan → ledger bridge — **done (2026-09-23)**
+
+`src/ecdat/assemble/bridge.py::assemble(results, declarations=...)` turns adapter
+runs into `LedgerSubject`s, adding no judgement of its own: functions come from
+`function/classifier.py` (§5.1, previously never called from `src/`), clock-stopping
+from `adapters/tls/adapter.py::migration_evidence_from` (§5.7), and every date
+from a field an adapter observed.
+
+- **TLS** → `NegotiatedHandshake` → KNOWN key-establishment + server-auth contexts;
+  `first_observed` = the probe date (the only input §5.2 lets confirm); `not_before`
+  joined from `certs-x509` only on an exact DER hash (IDENTITY-CERT-DER-001).
+  **A successful classical-only probe becomes its own row** (`|classical-client`):
+  on the recorded Tier A endpoint the hybrid path is SAFE while a classical-only
+  client still negotiates X25519 — BLEEDING under Z_aggressive, SAVABLE under
+  Z_central, both PARTIAL. Without this row the surface would read as SAFE because
+  the *best* client is safe.
+- **Certificates** → keyUsage → INFERRED capability contexts, `not_before` as
+  possibility only. A certificate already seen in a handshake is not emitted twice.
+- **Source** → `SourceCallSite` (the adapter now records `api_class` from the rule's
+  `$1` capture, present in the recorded 1.99.0 fixture). No start date is invented
+  for a call site. Symmetric `Cipher`, `Mac`, `MessageDigest` stay UNKNOWN, exactly
+  as §5.1 says ("Anything else → UNKNOWN. No default.").
+- **Data class** — the one input no scanner observes — comes from a `Declarations`
+  YAML (`surface` or `asset`, `data_class` naming a cited `data_lifetime.yaml` row,
+  and a required `declared_by`). Undeclared → no binding → UNBOUNDED + closure task.
+- Nothing is dropped silently: every finding that does not become a subject is
+  listed in `Assembly.unassembled` with its reason (package presence: "capability,
+  never usage — by design").
+
+Wired into `ecdat assemble --plan <plan> [--declarations <yaml>] --out subjects.json`
+(same plan format as `correlate`; output is the exact fixture shape `ledger-run` and
+the dashboard read), and into the API via `ECDAT_SUBJECTS_PATH`, with `/api/health`
+reporting `fixture: false` so the dashboard's "Fixture data" banner is shown only
+when it is true. Verified end to end through the real CLI: 2 recorded scans → 7
+subjects → `ledger-run` under two scenarios → `diff` shows the classical-client row
+BLEEDING → SAVABLE; and in the browser: banner reads "Scan data", rows are the
+assembled ones.
+
+Also fixed on the way: `ecdat diff` now exits 2 with a message on a malformed run
+id instead of a traceback; `test_source_text_is_never_carried_into_a_finding` now
+checks the actual matched lines Semgrep echoed rather than the proxy word
+`MessageDigest` (a stricter check — the class name is a metavariable capture, not
+source text).
+
+Tests: `tests/unit/assemble/test_bridge.py` (17, all over real adapter runs).
+577 tests pass; all three CI guards pass.
+
+**Not yet:** the config-chain join (PAY-001's `KeyWrapService` should become an
+INFERRED KEY_TRANSPORT with a conditional band per §6, once the `config-chain-spring`
+resolution is fed to the bridge); multi-run `first_observed` (earliest observation
+across the P13 run store rather than this run's date); image/HSM/KMS/binary
+classifier paths.
+
+### P22 — Sourced Z scenarios and policy deadlines — **done (2026-09-23)**
+
+Three primary sources vendored as excerpt notes under `docs/sources/` (metadata,
+SHA-256 of the fetched PDF, the exact text used — extracted with pypdf, not
+recalled): NIST IR 8547 ipd (Nov 2024, Tables 2 and 4), India DST *Roadmap to
+Quantum Resiliency* (May 2026, milestones pp. 105–107), GRI *Quantum Threat
+Timeline Report 2025* (9 Mar 2026, publication page).
+
+- **Z scenarios.** Z_central (2036) and Z_optimistic (2041) now cite GRI 2025's own
+  10- and 15-year figures, "quite possible (28-49%)" and "likely (51-70%)" —
+  resolving §9 item 2 for those two. Z_aggressive stays a test constant: the
+  page gives no 5-year figure for this edition, and the "5-14%" secondary sources
+  quote belongs to the 2024 survey, so it is not borrowed. Dates stay operator
+  assumptions (§5.12: no probabilistic Z); the source is their basis.
+- **DH resolved.** `crypto_families.yaml`'s DH row was `usable: false` pending
+  exactly "cite NIST IR 8547 once it is vendored". Table 4 lists finite-field DH as
+  quantum-vulnerable; the row is now usable. Two tests (ledger, closure) had used
+  DH as their example of an *uncited* family — they now use SM2, which still has no
+  row; the behaviour they test is unchanged.
+- **Policy deadlines** (`data/policy_deadlines.yaml`, `risk/policy.py`): India
+  DST CII (high-priority 2028-12-31, full 2029-12-31), India DST Enterprises (2030,
+  2033), NIST IR 8547 ipd "Disallowed after 2035". Laid **over** a row as
+  `open / met / undetermined / not_applicable` — never read by the ledger, so no
+  band moves because a regulator published a date. `met` requires the row's own
+  observed stop `M` on or before the deadline and no REOPENED qualifier.
+  Programme-level milestones (India "Building the foundations": inventory, CBOM
+  requests) are scoped `programme` and never charged to a single key.
+  **Recorded, not applied:** NIST's "Deprecated after 2030" (112-bit only; no row
+  carries a key strength) and the EU roadmap (primary PDF not vendored yet).
+- **Surfaced** as `policy_deadlines` on every API row and a "Policy deadline"
+  column in the dashboard (nearest open milestone; hover lists all). Verified live
+  on the P21 scan data: the classical X25519 path reads "2028-12-31 · India CII ·
+  High-priority systems migrated"; the hybrid path "not applicable"; rows with an
+  unknown algorithm "undetermined".
+
+**Found on the way, worth knowing:** India's roadmap moves CBOMs into procurement
+— "start requesting CBOMs" from FY2026–27, "mandate submission of CBOM from the
+vendors" from FY2027–28 (p. 106). That is the document this tool exports.
+
+Tests: `tests/unit/risk/test_policy.py` (10). 587 tests pass; all three CI guards pass.

@@ -158,7 +158,7 @@ def test_unresolvable_family_task_reaches_both_safe_and_bleeding():
     """Collecting the family moves the row between the two ends. That is the
     impact set, computed by re-running the ledger over cited families."""
     record = conf(
-        usage_context=context(CryptoFunction.KEY_ESTABLISHMENT, "DH"),
+        usage_context=context(CryptoFunction.KEY_ESTABLISHMENT, "SM2"),
         temporal=temporal(confirmed=date(2021, 1, 1)),
         binding=x("TEST.X_25Y"),
     )
@@ -275,7 +275,7 @@ def test_queue_ranks_worst_reachable_band_first_then_rows_affected():
     """§5.8: 'rank tasks lexicographically (worst reachable band, rows
     affected, longest reachable window)'."""
     bleeding_reachable = conf(
-        usage_context=context(CryptoFunction.KEY_ESTABLISHMENT, "DH", uid="UC-dh"),
+        usage_context=context(CryptoFunction.KEY_ESTABLISHMENT, "SM2", uid="UC-dh"),
         temporal=temporal(confirmed=date(2021, 1, 1)),
         binding=x("TEST.X_25Y"),
     )
@@ -296,7 +296,7 @@ def test_more_rows_outranks_fewer_at_the_same_band():
             binding=x("TEST.X_25Y"),
         )
 
-    many = [row(f"UC-{i}", "DH") for i in range(3)]
+    many = [row(f"UC-{i}", "SM2") for i in range(3)]
     one = conf(
         usage_context=context(
             CryptoFunction.KEY_TRANSPORT,
@@ -331,7 +331,7 @@ def test_every_task_carries_its_citation_and_its_reason():
 
 def test_closure_impact_never_mutates_the_record_it_was_computed_from():
     record = conf(
-        usage_context=context(CryptoFunction.KEY_ESTABLISHMENT, "DH"),
+        usage_context=context(CryptoFunction.KEY_ESTABLISHMENT, "SM2"),
         temporal=temporal(confirmed=date(2021, 1, 1)),
         binding=x("TEST.X_25Y"),
     )
