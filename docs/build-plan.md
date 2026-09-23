@@ -635,3 +635,28 @@ appears in a signed document) plus two in `test_app.py`. 560 tests pass (was
 certificate chain, and any JSF algorithm other than Ed25519 (RS*/PS*/ES*/HS*)
 — all real hardening work, out of this close, matching OI-013's own original
 deferral note.
+
+---
+
+## P21–P26 — from the 2026-09-23 review (implementation gaps + external research)
+
+Source: a repo audit plus a web sweep on 2026-09-23 (NIST, CISA/EO 14412,
+India DST, RBI/SEBI, EU, Cloudflare, OpenJDK, sslyze, Let's Encrypt, competing
+SIH26164 repos). Each item was checked against the code before being listed.
+
+| Phase | What | Why now | Status |
+|---|---|---|---|
+| **P21** | **Scan → ledger bridge.** Wire `function/classifier.py` (built, never called) so adapter findings become `UsageContext`s; derive `TemporalEvidence` from what adapters actually observe; give data-class binding a declaration input. | No code in `src/` constructs a `LedgerSubject`. Every band the dashboard shows comes from a hand-built fixture. This is the single largest gap. | open |
+| **P22** | **Sourced Z scenarios and policies.** Cite GRI Quantum Threat Timeline 2025 (pub. 9 Mar 2026) for the Z dates; add India DST roadmap (CII by 2029, inventories by Dec 2027), NIST IR 8547 ipd (deprecate 2030 / disallow 2035), EU roadmap (high-risk by 2030) as selectable policy deadlines. | `data/scenarios.yaml` Z dates are `TEST_CONSTANT`; `crypto_families.yaml` carries a `TODO-VERIFY: cite NIST IR 8547`. | open |
+| **P23** | **Recommendation corrections.** Public-web TLS server authentication: Chrome has stated it will not accept ML-DSA in X.509 and is backing Merkle Tree Certificates (Let's Encrypt staging late 2026). Add FN-DSA (FIPS 206, draft) and HQC (selected Mar 2025) as flagged-draft options. | `pqc_options.yaml` recommends ML-DSA generically for signatures. | open |
+| **P24** | **Performance.** Evaluate a run once per request set, cache per (subjects, scenario, policy, as_of); compute scenario sensitivity from the three cached runs instead of 3× re-evaluation per row; index the run store. | Dashboard triggers 3 full ledger runs + 3× per-row sensitivity per page load; `list_runs` reads every run file in full. | open |
+| **P25** | **SARIF output + CI gate.** `ecdat ledger-run --sarif`, and a gate that fails a pipeline on BLEEDING / REGRESSED rows. | A competing SIH26164 repo ships both; cheap, and it is how the tool fits a developer workflow. | open |
+| **P26** | **CycloneDX 1.7.** Vendor the 1.7 schema (ECMA-424 2nd ed.), move export to 1.7, keep 1.6 import. | 1.7 released Oct 2025; EO 14412 CBOM minimum elements due ~Mar 2027. | open |
+
+**Confirmed, no change needed:** sslyze 6.3.0 / 6.3.1 release notes still show
+no ML-KEM / hybrid-group support — OI-017 stands and the two-probe TLS design
+(DEV-004) remains necessary. OpenSSL 3.5 and JDK 27 (JEP 527) now negotiate
+X25519MLKEM768 by default with no application change, which is direct support
+for the rule that only an *observed* negotiation stops the clock.
+
+Order: P21 → P22 → P23 → P24 → P25 → P26.
