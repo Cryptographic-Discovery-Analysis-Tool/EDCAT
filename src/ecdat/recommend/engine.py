@@ -209,6 +209,21 @@ def hybrid_rationale() -> dict[str, str]:
     return {}
 
 
+def _caveat(key: str) -> dict[str, Any] | None:
+    for row in _usable("caveats"):
+        if row["key"] == key:
+            return row
+    return None
+
+
+def _is_tls_server_certificate(context: UsageContext) -> bool:
+    """The classifier names this context "<suite> server certificate"
+    (function/classifier.py::classify_handshake). Whether the certificate is
+    publicly trusted is not observable from the handshake, so the WebPKI
+    caveat is phrased conditionally rather than asserted."""
+    return "server certificate" in (context.protocol_context or "")
+
+
 def _options_for(option_key: str, profile: Profile) -> tuple[Option, ...]:
     built: list[Option] = []
     for row in _usable("options"):
@@ -224,7 +239,7 @@ def _options_for(option_key: str, profile: Profile) -> tuple[Option, ...]:
                 citation=row["citation"],
                 parameter_set=parameter_set,
                 cost=Cost.load(parameter_set or algorithm),
-                note=row.get("note"),
+                note=" ".join(row["note"].split()) if row.get("note") else None,
                 caveat=_hybrid_caveat() if row["hybrid"] else None,
             )
         )
@@ -304,6 +319,13 @@ def recommend(
                     else o
                     for o in options
                 )
+        webpki = _caveat("webpki_tls_server_certificate")
+        if webpki is not None and _is_tls_server_certificate(context):
+            text = " ".join(webpki["text"].split())
+            options = tuple(
+                o.model_copy(update={"caveat": text}) if o.algorithm == "ML-DSA" else o
+                for o in options
+            )
         return Recommendation(
             **base,
             options=options,

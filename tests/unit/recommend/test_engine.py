@@ -217,3 +217,67 @@ def test_draft_standards_are_never_recommended():
     }
     assert "FN-DSA" not in offered
     assert "HQC" not in offered
+
+
+# --- P23: public-web TLS certificates ------------------------------------------
+
+
+def _tls_auth_context():
+    from datetime import date
+
+    from ecdat.function.classifier import NegotiatedHandshake, classify_handshake
+
+    (_, auth) = classify_handshake(
+        NegotiatedHandshake(
+            surface_id="tls:example:443",
+            vantage="v",
+            observed_at=date(2026, 9, 23),
+            cipher_suite="TLS_AES_128_GCM_SHA256",
+            negotiated_group="X25519",
+            kex_asset_id="k",
+            cert_asset_id="c",
+            evidence_id="e",
+        )
+    )
+    return auth
+
+
+def _source_signature_context():
+    from ecdat.function.classifier import SourceCallSite, classify_call_site
+
+    (ctx,) = classify_call_site(
+        SourceCallSite(
+            surface_id="source:App.java", asset_id="a", api_class="Signature",
+            location="App.java:10", evidence_id="e", transformation="SHA256withRSA",
+        )
+    )
+    return ctx
+
+
+def test_tls_server_certificate_ml_dsa_carries_the_webpki_caveat():
+    """Chrome: "no immediate plan to add traditional X.509 certificates
+    containing post-quantum cryptography to the Chrome Root Store"
+    (docs/sources/Google_Chrome_MTC_2026.md)."""
+    rec = recommend(_tls_auth_context())
+    (ml_dsa,) = [o for o in rec.options if o.algorithm == "ML-DSA"]
+    assert ml_dsa.caveat is not None
+    assert "Merkle Tree Certificates" in ml_dsa.caveat
+    assert "private PKI" in ml_dsa.caveat, "the caveat must not read as 'never use ML-DSA'"
+
+
+def test_non_tls_signatures_carry_no_webpki_caveat():
+    rec = recommend(_source_signature_context())
+    (ml_dsa,) = [o for o in rec.options if o.algorithm == "ML-DSA"]
+    assert ml_dsa.caveat is None
+
+
+def test_fn_dsa_and_hqc_recheck_is_recorded_and_still_not_usable():
+    """Lock §9: "FIPS 206 / HQC status recheck before finals" -- done 2026-09-23."""
+    import yaml
+
+    from ecdat.recommend.engine import _path
+
+    rows = {r["key"]: r for r in yaml.safe_load(_path().read_text(encoding="utf-8"))["standards_status"]}
+    for key in ("fips_206_fn_dsa", "hqc_backup_kem"):
+        assert rows[key]["usable"] is False
+        assert str(rows[key]["rechecked"]) == "2026-09-23"
