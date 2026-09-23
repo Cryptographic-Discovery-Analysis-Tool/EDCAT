@@ -54,6 +54,7 @@ from ecdat.risk.scenarios import (
     Policy,
     Scenario,
 )
+from ecdat.risk.policy import annotate as annotate_policies
 from ecdat.risk.sensitivity import sensitivity_for
 from ecdat.security.audit import AuditLog, InMemoryAuditLog, Verb, entry_for
 from ecdat.security.auth import AuthError, InsufficientRoleError, Principal, Role, TokenRegistry
@@ -201,6 +202,21 @@ def _row(record: CalculationRecord) -> dict[str, Any]:
         "start_possible": record.start_possible.isoformat() if record.start_possible else None,
         "start_confirmed": record.start_confirmed.isoformat() if record.start_confirmed else None,
         "sensitivity": _sensitivity(record),
+        # P22: regulator deadlines laid over the row. Never moves the band.
+        "policy_deadlines": [
+            {
+                "policy": a.policy_key,
+                "policy_label": a.policy_label,
+                "milestone": a.milestone_key,
+                "milestone_label": a.milestone_label,
+                "deadline": a.deadline.isoformat(),
+                "status": a.status.value,
+                "days_remaining": a.days_remaining,
+                "reason": a.reason,
+                "citation": a.citation,
+            }
+            for a in annotate_policies(record)
+        ],
     }
 
 

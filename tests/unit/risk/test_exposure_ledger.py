@@ -362,7 +362,9 @@ def test_unknown_algorithm_family_is_unbounded_with_a_conditional():
     """A function we observed over an algorithm no cited row classifies."""
     record = confidentiality_ledger.evaluate(
         inputs(
-            usage_context=context(CryptoFunction.KEY_ESTABLISHMENT, "DH"),
+            # Any family with no usable row in data/crypto_families.yaml. DH was
+            # the example until NIST IR 8547 (vendored 2026-09-23) cited it.
+            usage_context=context(CryptoFunction.KEY_ESTABLISHMENT, "SM2"),
             temporal=temporal(confirmed=date(2021, 1, 1)),
             binding=x("TEST.X_25Y"),
         )
