@@ -55,6 +55,9 @@ class Milestone(BaseModel):
     #: organisation-level milestone (inventory, CBOM requests) that no single
     #: row can meet, so it is never laid over a row.
     scope: str = "row"
+    #: Set when a milestone binds only at one classical strength (NIST IR
+    #: 8547's "Deprecated after 2030" is 112-bit only). None = every strength.
+    applies_at_strength: int | None = None
 
 
 class PolicyDeadlines(BaseModel):
@@ -82,6 +85,27 @@ class PolicyAnnotation(BaseModel):
 
 def _data_path() -> Path:
     return Path(__file__).resolve().parents[3] / "data" / "policy_deadlines.yaml"
+
+
+@lru_cache(maxsize=1)
+def _fixed_strengths() -> dict[str, int]:
+    """Families whose classical strength is fixed by the name (SP 800-186
+    Table 1). RSA / finite-field DH are sized by key length and are absent on
+    purpose until a row carries one."""
+    path = _data_path().with_name("security_strength.yaml")
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return {
+        row["key"]: int(row["strength_bits"])
+        for row in document.get("families") or ()
+        if row.get("usable") is True
+    }
+
+
+def security_strength(record: CalculationRecord) -> int | None:
+    algorithm = record.inputs.usage_context.algorithm
+    if algorithm is None or algorithm.value is None:
+        return None
+    return _fixed_strengths().get(canonical_family(algorithm.value) or "")
 
 
 @lru_cache(maxsize=1)
@@ -125,10 +149,23 @@ def annotate(
         for milestone in policy.milestones:
             if milestone.scope != "row":
                 continue
+            strength = security_strength(record)
             if vulnerable is None:
                 status, reason = PolicyStatus.UNDETERMINED, why
             elif vulnerable is False:
                 status, reason = PolicyStatus.NOT_APPLICABLE, why
+            elif milestone.applies_at_strength is not None and strength is None:
+                status = PolicyStatus.UNDETERMINED
+                reason = (
+                    f"binds only at {milestone.applies_at_strength}-bit strength; this row's "
+                    "strength is unknown (no key size on the row)"
+                )
+            elif milestone.applies_at_strength is not None and strength != milestone.applies_at_strength:
+                status = PolicyStatus.NOT_APPLICABLE
+                reason = (
+                    f"binds only at {milestone.applies_at_strength}-bit strength; "
+                    f"this row is {strength}-bit (data/security_strength.yaml)"
+                )
             elif (
                 record.M is not None
                 and record.M <= milestone.date

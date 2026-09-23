@@ -754,3 +754,28 @@ Timeline Report 2025* (9 Mar 2026, publication page).
 vendors" from FY2027–28 (p. 106). That is the document this tool exports.
 
 Tests: `tests/unit/risk/test_policy.py` (10). 587 tests pass; all three CI guards pass.
+
+#### P22 addendum (same day) — the two "recorded, not applied" items, now applied
+
+- **NIST 112-bit deprecation.** IR 8547 defers "security level" to SP 800-57, so two
+  more NIST sources were vendored: SP 800-57 Pt 1 Rev 5 Table 2 (RSA k=2048 → 112,
+  k=3072 → 128; FFC likewise) and SP 800-186 Table 1 (P-256, Curve25519,
+  Edwards25519 → 128; P-384 → 192; P-224 → 112). New `data/security_strength.yaml`.
+  The "Deprecated after 2030" milestone now carries `applies_at_strength: 112`: it
+  is `not_applicable` to a 128-bit X25519/P-256 row, `open` for a 112-bit one, and
+  `undetermined` for RSA/DH — their strength depends on a key size no row carries
+  yet, so it is not guessed. SP 800-186 is used for the curves on purpose: SP
+  800-57's field-size column alone would put Curve25519 (255-bit field) at 112.
+- **EU roadmap.** The PDF (v1.1, 11.06.2025) is now fetched and vendored. Its
+  per-use-case rule — quantum-vulnerable public key "shall not be used stand-alone
+  after the end of 2030" for high-risk, 2035 for medium-risk — is carried as two
+  policies, `EU_HIGH_RISK` and `EU_MEDIUM_RISK`. The roadmap derives risk level from
+  a score the organisation computes (p. 10); this tool computes no score (§5.12), so
+  the level is the operator's to state, as with India CII vs Enterprise.
+  "Stand-alone" matches the existing `met` rule: an observed migration with
+  classical refused.
+- `crypto_families.yaml` gains P-224, P-384, P-521, X448, Ed25519 as Shor-broken,
+  each cited to the IR 8547 table row that lists it. Found because a P-224 test
+  correctly came back `undetermined` — the family had no row.
+
+591 tests pass; all three CI guards pass.
