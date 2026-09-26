@@ -308,6 +308,71 @@ def _from_tls(
             subjects.append(
                 _subject(context, classical_temporal, declarations, migrations=migrations)
             )
+
+    # DEV-013: the individual group-probe path (adapters/tls/adapter.py)
+    # answers "does this endpoint ACCEPT this hybrid group", one probe per
+    # group -- broader than the single negotiated_group above, which only
+    # ever reports what the endpoint PREFERS when everything is offered.
+    # Each accepted hybrid group OTHER than the preferred one is a genuinely
+    # separate observation (a handshake that offered only that group and
+    # completed) and gets its own subject, so the recommendation engine and
+    # the exposure ledger see every group this endpoint will actually do
+    # hybrid key exchange with -- not only the one it happens to prefer.
+    accepted_field = finding.fields.get("hybrid_kex_accepted_groups")
+    if accepted_field is not None and accepted_field.state == EpistemicState.KNOWN:
+        classical_field = finding.fields.get("classical_still_accepted")
+        if classical_field is not None and classical_field.state == EpistemicState.KNOWN:
+            group_classical_accepted = bool(classical_field.value)
+            group_status = EpistemicState.KNOWN
+        else:
+            # Same conservative default `migration_evidence_from` uses: an
+            # untested classical path is assumed still open, so the clock
+            # keeps running until someone actually checks it.
+            group_classical_accepted = True
+            group_status = EpistemicState.INFERRED
+        for group in accepted_field.value:
+            if group == observation.negotiated_group:
+                continue  # already the subject the main pass above emitted
+            group_refs = _refs(finding, f"group_accepted_{group}")
+            group_observation = observation.model_copy(
+                update={
+                    "negotiated_group": group,
+                    "cert_asset_id": None,
+                    "evidence_id": (group_refs or (evidence_id,))[0],
+                }
+            )
+            group_migration = MigrationEvidence(
+                surface_id=finding.surface,
+                vantage=observation.vantage,
+                observed_at=observed_on,
+                negotiated_group=group,
+                classical_still_accepted=group_classical_accepted,
+                status=group_status,
+                evidence_refs=group_refs or (evidence_id,),
+            )
+            for context in classify_handshake(group_observation):
+                if not context.usage_context_id.endswith("|kex"):
+                    continue
+                context = context.model_copy(
+                    update={
+                        "usage_context_id": context.usage_context_id + f"|group-probe-{group}",
+                        "protocol_context": f"individual-group probe: {group} (accepted)",
+                    }
+                )
+                group_temporal = temporal.model_copy(
+                    update={
+                        "first_observed": FieldValue[date](
+                            value=observed_on,
+                            state=EpistemicState.KNOWN,
+                            evidence_refs=group_refs or (evidence_id,),
+                        )
+                    }
+                )
+                subjects.append(
+                    _subject(
+                        context, group_temporal, declarations, migrations=(group_migration,)
+                    )
+                )
     return subjects
 
 

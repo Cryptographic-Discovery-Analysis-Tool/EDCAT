@@ -1,11 +1,28 @@
-# openssl 3.5.4 — recorded fixtures (2026-09-17)
+# openssl 3.5.4 — recorded fixtures (2026-09-17, re-recorded 2026-09-26)
 
 **Version already present on this machine** (not newly installed): mingw64
 build shipped with Git for Windows. `openssl version` →
 `OpenSSL 3.5.4 30 Sep 2025 (Library: OpenSSL 3.5.4 30 Sep 2025)`. Same build
 used for OI-002/EXP-004's PRV-T3 experiment.
 
-**Date run:** 2026-09-17
+**Date run:** 2026-09-17. **Re-recorded 2026-09-26** (both subdirectories
+below, `topo_x3_der_hash_equality/` and `e4_seclevel_tier_a_certs/`): the
+harness's PKI (`ecdat-harness/harness/build/generate-pki.sh`) was made
+deterministic that day (a PKI-staleness problem distinct from OI-014 --
+see `ecdat-harness/README.md`'s "Deterministic PKI" section; not yet filed
+as its own open issue, next free number as of 2026-09-26 is OI-019) and
+regenerated in the process, which
+produced fresh keys/certs under new SHA-256 fingerprints/serials/validity
+dates -- the certificate *bytes* this directory records went stale, even
+though the commands and findings below are otherwise unchanged. Same
+openssl build/version as the original capture (`OpenSSL 3.5.4 30 Sep 2025`,
+mingw64), same machine, same commands -- only the harness PKI's bytes and
+(for `e4_seclevel_tier_a_certs/`) the explicit `-tls1_2` flag now shown on
+the `s_client` command lines changed (the original capture must have forced
+TLSv1.2 some other way -- not documented in its `results.txt` -- since
+without it TLS1.3 negotiates by default on this openssl build and neither
+`s_client` command here reproduces the original's exact behaviour; `-tls1_2`
+was added to make that explicit and honest rather than guessed).
 
 ## Subdirectory `topo_x3_der_hash_equality/` — TOPO-X3
 
