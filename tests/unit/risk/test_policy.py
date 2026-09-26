@@ -37,6 +37,9 @@ def test_only_usable_cited_policies_load():
         "EU_HIGH_RISK",
         "EU_MEDIUM_RISK",
         "US_EO14412_HVA",
+        "CA_CCCS_ITSM40001",
+        "DE_BSI_TR02102_KEY_AGREEMENT",
+        "DE_BSI_TR02102_SIGNATURES",
     }
 
 
@@ -155,3 +158,39 @@ def test_eu_high_and_medium_risk_deadlines():
     assert _by(annotations, "EU_HIGH_RISK", "no_standalone_classical").deadline == date(2030, 12, 31)
     assert _by(annotations, "EU_MEDIUM_RISK", "no_standalone_classical").deadline == date(2035, 12, 31)
     assert _by(annotations, "EU_HIGH_RISK", "no_standalone_classical").status == PolicyStatus.OPEN
+
+
+def test_ca_cccs_itsm40001_dates_are_the_roadmaps_own():
+    (policy,) = [p for p in load_policies() if p.key == "CA_CCCS_ITSM40001"]
+    assert [(m.key, m.date) for m in policy.milestones] == [
+        ("initial_departmental_plan", date(2026, 4, 30)),
+        ("annual_progress_reporting", date(2026, 4, 30)),
+        ("high_priority", date(2031, 12, 31)),
+        ("full_migration", date(2035, 12, 31)),
+    ]
+
+
+def test_ca_cccs_itsm40001_programme_milestones_are_never_laid_over_a_row():
+    annotations = annotate(_record("X25519"))
+    assert not [a for a in annotations if a.milestone_key == "initial_departmental_plan"]
+    assert not [a for a in annotations if a.milestone_key == "annual_progress_reporting"]
+    assert _by(annotations, "CA_CCCS_ITSM40001", "high_priority").status == PolicyStatus.OPEN
+    assert _by(annotations, "CA_CCCS_ITSM40001", "full_migration").deadline == date(2035, 12, 31)
+
+
+def test_de_bsi_tr02102_key_agreement_and_signature_deadlines():
+    annotations = annotate(_record("X25519"))
+    key_agreement = _by(annotations, "DE_BSI_TR02102_KEY_AGREEMENT", "no_classical_only_key_agreement")
+    signatures = _by(annotations, "DE_BSI_TR02102_SIGNATURES", "no_classical_only_signatures")
+    assert key_agreement.deadline == date(2031, 12, 31)
+    assert key_agreement.status == PolicyStatus.OPEN
+    assert signatures.deadline == date(2035, 12, 31)
+    assert signatures.status == PolicyStatus.OPEN
+
+
+def test_de_bsi_tr02102_met_when_observed_stop_precedes_the_deadline():
+    record = _record("X25519", migrations=(stop_at(date(2026, 6, 1)),))
+    assert (
+        _by(annotate(record), "DE_BSI_TR02102_KEY_AGREEMENT", "no_classical_only_key_agreement").status
+        == PolicyStatus.MET
+    )

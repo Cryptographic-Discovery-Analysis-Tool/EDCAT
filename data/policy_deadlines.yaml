@@ -144,3 +144,96 @@ policies:
         label: "PQC for digital signatures"
         date: 2031-12-31
         quote: "transition all HVAs and high impact systems to use PQC for digital signatures by December 31, 2031"
+
+  - key: CA_CCCS_ITSM40001
+    label: "Canada CCCS ITSM.40.001 -- Roadmap for the migration to post-quantum cryptography for the Government of Canada"
+    # Key-prefix "CA_" is this registry's jurisdiction convention, same as
+    # US_ / IN_ / EU_ / NIST_ above; no schema field was added for it.
+    applies_to: quantum_vulnerable
+    usable: true
+    citation: "docs/sources/CA_CCCS_ITSM40001_2025.md"
+    quote: "End of 2035: Completion of PQC migration of remaining systems"
+    note: >-
+      CCCS guidance to Government of Canada departments (ITSM.40.001, dated
+      modified 2025-06-24 per the fetched page). No National Security Systems
+      carve-out was found in the source (unlike EO 14412 above); this row
+      applies to the roadmap as published, without inferring a scope
+      exclusion the source does not state.
+    milestones:
+      - key: initial_departmental_plan
+        label: "Initial departmental PQC migration plan"
+        # Programme-level: a single agency-wide plan, not something a per-key
+        # ledger row meets or misses, so risk/policy.py never lays it on a row.
+        scope: programme
+        date: 2026-04-30
+        quote: "April 2026: Develop an initial departmental PQC migration plan"
+      - key: annual_progress_reporting
+        label: "Annual PQC migration progress reporting begins"
+        scope: programme
+        date: 2026-04-30
+        quote: "Beginning April 2026 and annually after: Report on PQC migration progress"
+      - key: high_priority
+        label: "High-priority systems migrated"
+        date: 2031-12-31
+        quote: "End of 2031: Completion of PQC migration of high priority systems"
+      - key: full_migration
+        label: "Full migration (remaining systems)"
+        date: 2035-12-31
+        quote: "End of 2035: Completion of PQC migration of remaining systems"
+
+  - key: DE_BSI_TR02102_KEY_AGREEMENT
+    label: "Germany BSI TR-02102-1 -- classical-only key agreement"
+    applies_to: quantum_vulnerable
+    usable: true
+    citation: "docs/sources/DE_BSI_TR-02102-1_2026.md -- Section 2.1 / 2.3"
+    quote: "The sole use of classic key agreement mechanisms is only recommended until the end of 2031"
+    note: >-
+      BSI TR-02102-1, "Cryptographic Mechanisms: Recommendations and Key
+      Lengths", Version 2026-01 (as of 23 January 2026). Recommends hybrid
+      key agreement combining a classical mechanism with FrodoKEM, Classic
+      McEliece, or ML-KEM (Section 2.4) beyond this date. Applies to key
+      agreement / encryption only; the signature cutoff is the separate
+      DE_BSI_TR02102_SIGNATURES row below.
+    milestones:
+      - key: no_classical_only_key_agreement
+        label: "No sole use of classical key agreement"
+        date: 2031-12-31
+        quote: "The sole use of classic key agreement mechanisms is only recommended until the end of 2031, see also Section 2.3."
+
+  - key: DE_BSI_TR02102_SIGNATURES
+    label: "Germany BSI TR-02102-1 -- classical-only signatures"
+    applies_to: quantum_vulnerable
+    usable: true
+    citation: "docs/sources/DE_BSI_TR-02102-1_2026.md -- Section 2.1"
+    quote: "the use of classic signature mechanisms is therefore only recommended until the end of 2035"
+    note: >-
+      Same Technical Guideline as DE_BSI_TR02102_KEY_AGREEMENT above; follows
+      the EU coordinated roadmap's 2035 signature transition date (Section
+      2.1, citing [1]).
+    milestones:
+      - key: no_classical_only_signatures
+        label: "No sole use of classical signatures"
+        date: 2035-12-31
+        quote: "Based on current knowledge, the use of classic signature mechanisms is therefore only recommended until the end of 2035."
+
+  - key: IN_SEBI_CSCRF
+    label: "India SEBI CSCRF -- PQC crypto-agility (no dated milestone)"
+    applies_to: quantum_vulnerable
+    usable: false
+    citation: "docs/sources/IN_SEBI_CSCRF_2024.md"
+    quote: "REs shall enhance their crypto-agility to ensure a seamless transition to quantum-resistant solutions without disrupting their current IT systems."
+    why_not_usable: >-
+      SEBI circular SEBI/HO/ITD-1/ITD_CSC_EXT/P/CIR/2024/113 (20 Aug 2024),
+      "Cybersecurity and Cyber Resilience Framework (CSCRF) for SEBI
+      Regulated Entities", Box Item 7 (p.59-60), requires REs to maintain a
+      cryptographic-asset inventory prioritised for PQC migration and to
+      "enhance their crypto-agility" -- but states these as "indicative
+      measures" with no calendar date. The circular's compliance-timeline
+      section (Table 15) sets periodicities for the general risk-assessment
+      standard PQC risk is folded into (half-yearly for MIIs, annual for
+      Qualified/Mid-size REs), not a PQC-specific deadline. Two later
+      clarification circulars (2024/184, 31 Dec 2024; 2025/119, 28 Aug 2025)
+      were checked and contain no quantum/PQC content. No milestone date is
+      recorded here rather than inventing one; see docs/sources/ for the
+      full quote and search notes.
+    milestones: []
