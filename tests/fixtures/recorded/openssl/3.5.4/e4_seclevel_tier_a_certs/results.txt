@@ -12,7 +12,8 @@ $ openssl x509 -in pay-edge/cert.pem -noout -text | grep -E 'Public-Key|Signatur
     Signature Algorithm: ecdsa-with-SHA256
 
 --- s_client at default seclevel (1) against pay-edge (ECDSA P-256) ---
-Connecting to ::1
+$ openssl s_client -connect 127.0.0.1:8443 -tls1_2 -cipher ECDHE-ECDSA-AES128-GCM-SHA256 -brief
+Connecting to 127.0.0.1
 depth=0 O=Harness Payments, CN=pay-edge
 verify error:num=20:unable to get local issuer certificate
 depth=0 O=Harness Payments, CN=pay-edge
@@ -29,8 +30,9 @@ Peer Temp Key: X25519, 253 bits
 DONE
 
 --- s_client with cipherstring forcing @SECLEVEL=4 (192-bit minimum) against the same P-256 cert ---
-Connecting to ::1
-20390000:error:0A0000B5:SSL routines:ssl_cipher_list_to_bytes:no ciphers available:../openssl-3.5.4/ssl/statem/statem_clnt.c:4176:No ciphers enabled for max supported SSL/TLS version
+$ openssl s_client -connect 127.0.0.1:8443 -tls1_2 -cipher "ECDHE-ECDSA-AES128-GCM-SHA256:@SECLEVEL=4" -brief
+Connecting to 127.0.0.1
+0C120000:error:0A0000B5:SSL routines:ssl_cipher_list_to_bytes:no ciphers available:../openssl-3.5.4/ssl/statem/statem_clnt.c:4176:No ciphers enabled for max supported SSL/TLS version
 
 --- x509 -noout -checkend / -verify with -verify_ip / seclevel via -policy_check is N/A; using x509 -engine seclevel via cipher context is the mechanism above. Also test cert chain verify at seclevel 4: ---
 pay-edge/cert.pem: OK

@@ -116,11 +116,16 @@ def test_sslyze_leaf_hash_is_canonicalised_the_same_way_certs_x509_computes_it()
     byte the same hex hash. That equality is what makes cross-surface
     correlation (correlation/engine.py) honest for this field."""
     observation = parse_sslyze(json.loads(SSLYZE_JSON.read_text(encoding="utf-8")))
+    # Values re-verified against the harness's now-deterministic PKI
+    # (see "Deterministic PKI" in ecdat-harness/README.md) via
+    # `openssl x509 ... -outform DER | sha256sum` (der_sha256) and
+    # `openssl x509 ... -pubkey | openssl pkey -pubin -outform DER | sha256sum`
+    # (spki_sha256) against the on-disk pay-edge leaf certificate.
     assert observation.leaf_der_sha256 == (
-        "8a86ce9994efda613354233f9e7951a7bc193038f96265f596ce61292608ec72"
+        "895918125bb67ae82ea1eb1897b051ecf149902454193cd277298eef4f3120f3"
     )
     assert observation.leaf_spki_sha256 == (
-        "9390571d51590492daa35b41092b7822f51237d1de114ed94205152acd1fab82"
+        "133afc2d59061ec4a826fbc664de07721bc086f5c05946dac254e70d3a935200"
     )
 
 
@@ -188,12 +193,17 @@ def test_the_finding_carries_a_der_sha256_field_named_like_certs_x509s():
     for exactly this field name and picks this Finding up automatically,
     with no engine change needed for a second surface to participate."""
     (finding,) = run().findings
+    # Values re-verified against the harness's now-deterministic PKI
+    # (see "Deterministic PKI" in ecdat-harness/README.md) via
+    # `openssl x509 ... -outform DER | sha256sum` (der_sha256) and
+    # `openssl x509 ... -pubkey | openssl pkey -pubin -outform DER | sha256sum`
+    # (spki_sha256) against the on-disk pay-edge leaf certificate.
     assert finding.fields["der_sha256"].value == (
-        "8a86ce9994efda613354233f9e7951a7bc193038f96265f596ce61292608ec72"
+        "895918125bb67ae82ea1eb1897b051ecf149902454193cd277298eef4f3120f3"
     )
     assert finding.fields["der_sha256"].state == EpistemicState.KNOWN
     assert finding.fields["spki_sha256"].value == (
-        "9390571d51590492daa35b41092b7822f51237d1de114ed94205152acd1fab82"
+        "133afc2d59061ec4a826fbc664de07721bc086f5c05946dac254e70d3a935200"
     )
 
 

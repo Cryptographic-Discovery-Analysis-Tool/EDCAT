@@ -1,0 +1,2 @@
+C:\Users\athar\AppData\Roaming\Python\Python314\site-packages\sslyze\plugins\certificate_info\trust_stores\trust_store.py:55: CryptographyDeprecationWarning: Parsed a negative serial number, which is disallowed by RFC 5280. Loading this certificate will cause an exception in the next release of cryptography.
+  self._x509_store = Store(load_pem_x509_certificates(self.path.read_bytes()))

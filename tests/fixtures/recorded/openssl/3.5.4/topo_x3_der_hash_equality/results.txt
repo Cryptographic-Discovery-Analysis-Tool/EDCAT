@@ -1,11 +1,11 @@
 $ openssl x509 -in pay-edge.pem.crt -outform DER | sha256sum
-8a86ce9994efda613354233f9e7951a7bc193038f96265f596ce61292608ec72 *-
+895918125bb67ae82ea1eb1897b051ecf149902454193cd277298eef4f3120f3 *-
 $ sha256sum pay-edge.der.crt
-8a86ce9994efda613354233f9e7951a7bc193038f96265f596ce61292608ec72 *pay-edge.der.crt
+895918125bb67ae82ea1eb1897b051ecf149902454193cd277298eef4f3120f3 *pay-edge.der.crt
 
 $ openssl pkcs12 -in gateway.p12 -clcerts -nokeys -passin pass:changeit -out gateway-from-p12.pem.crt
 $ sha256sum gateway-from-p12.pem.crt
-a98c76f0ef880829f8c8eaf29f25bc8eef5f896c77961c451dc6db1ff8f39eb5 *gateway-from-p12.pem.crt
+ffcb45d6f8c7fe9c665bdd88b3ea1e59685cd4ba9d35f4ee597c6d5867dfb2be *gateway-from-p12.pem.crt
    -- NOTE: this raw PEM-text hash does NOT match the original cert.pem's PEM
       hash, because openssl pkcs12 -clcerts prepends "Bag Attributes"/
       "subject="/"issuer=" comment lines before the PEM block. This is the
@@ -15,15 +15,15 @@ a98c76f0ef880829f8c8eaf29f25bc8eef5f896c77961c451dc6db1ff8f39eb5 *gateway-from-p
 $ diff <(openssl x509 -in ../../../../../../../ecdat-harness/harness/build/out/gateway-p12/cert.pem) gateway-from-p12.pem.crt
 0a1,5
 > Bag Attributes
->     localKeyID: CD 4A C4 A6 28 53 B8 65 6E 9D 2F 8A E3 AE 8E F0 37 42 19 5D
+>     localKeyID: 89 85 2D 39 18 EE DE B5 2B A0 30 82 4C 04 76 91 55 E0 D5 20
 >     friendlyName: payment-gateway
 > subject=O=Harness Payments, CN=payment-gateway
 > issuer=O=Harness Intermediate CA (ECC), CN=Harness Intermediate CA ECC
 
 $ sha256sum gateway-from-p12.der.crt
-7c93c6a1fcf48e98b1bb1cc6ee177e7c0fa046cd34a405c8449710c73cb62998 *gateway-from-p12.der.crt
+cd041fb69a72d749e59c6dac5b62dd709a420c3d93e558610a59e6e253750515 *gateway-from-p12.der.crt
 $ openssl x509 -in <original cert.pem> -outform DER | sha256sum
-7c93c6a1fcf48e98b1bb1cc6ee177e7c0fa046cd34a405c8449710c73cb62998 *-
+cd041fb69a72d749e59c6dac5b62dd709a420c3d93e558610a59e6e253750515 *-
 
 CONCLUSION: once every encoding is canonicalized to DER via `openssl x509
 -outform DER` (running the PKCS12-extracted cert back through the x509
