@@ -30,12 +30,55 @@ def _by(annotations, policy, milestone):
 
 def test_only_usable_cited_policies_load():
     keys = {p.key for p in load_policies()}
-    assert keys == {"IN_DST_CII", "IN_DST_ENTERPRISE", "NIST_IR_8547_IPD", "EU_HIGH_RISK", "EU_MEDIUM_RISK"}
+    assert keys == {
+        "IN_DST_CII",
+        "IN_DST_ENTERPRISE",
+        "NIST_IR_8547_IPD",
+        "EU_HIGH_RISK",
+        "EU_MEDIUM_RISK",
+        "US_EO14412_HVA",
+    }
 
 
 def test_india_cii_dates_are_the_roadmaps_own():
     (cii,) = [p for p in load_policies() if p.key == "IN_DST_CII"]
-    assert [m.date for m in cii.milestones] == [date(2027, 12, 31), date(2028, 12, 31), date(2029, 12, 31)]
+    assert [m.date for m in cii.milestones] == [
+        date(2026, 12, 31),
+        date(2027, 12, 31),
+        date(2028, 12, 31),
+        date(2029, 12, 31),
+    ]
+
+
+def test_india_testing_labs_milestone_is_programme_scope_and_not_laid_over_a_row():
+    """"by December 2026" (DST roadmap printed p. 36) is national testing-lab
+    infrastructure, not something a single CII row meets -- same reasoning
+    as `foundations` below."""
+    annotations = annotate(_record("X25519"))
+    assert not [a for a in annotations if a.milestone_key == "testing_labs"]
+
+
+def test_us_eo14412_hva_dates_are_the_orders_own():
+    (policy,) = [p for p in load_policies() if p.key == "US_EO14412_HVA"]
+    assert [(m.key, m.date) for m in policy.milestones] == [
+        ("key_establishment", date(2030, 12, 31)),
+        ("digital_signatures", date(2031, 12, 31)),
+    ]
+
+
+def test_us_eo14412_hva_open_for_a_quantum_vulnerable_unmigrated_row():
+    annotations = annotate(_record("X25519"))
+    key_est = _by(annotations, "US_EO14412_HVA", "key_establishment")
+    sigs = _by(annotations, "US_EO14412_HVA", "digital_signatures")
+    assert key_est.status == PolicyStatus.OPEN
+    assert key_est.deadline == date(2030, 12, 31)
+    assert sigs.status == PolicyStatus.OPEN
+    assert sigs.deadline == date(2031, 12, 31)
+
+
+def test_us_eo14412_hva_met_when_observed_stop_precedes_the_deadline():
+    record = _record("X25519", migrations=(stop_at(date(2026, 6, 1)),))
+    assert _by(annotate(record), "US_EO14412_HVA", "key_establishment").status == PolicyStatus.MET
 
 
 def test_quantum_vulnerable_unmigrated_row_is_open_with_days_remaining():

@@ -92,6 +92,23 @@ hybrid_groups:
     citation: "docs/architecture/Pramana_Ledger_Spec.md §5.1"
     quote: "negotiated `X25519MLKEM768` -> HYBRID_KEX (Observed)"
 
+  - key: SecP256r1MLKEM768
+    usable: true
+    citation: "docs/sources/IETF_RFC_10024_2026.md -- Abstract"
+    quote: "This document defines three hybrid key agreement mechanisms for TLS 1.3 -- X25519MLKEM768, SecP256r1MLKEM768, and SecP384r1MLKEM1024"
+    note: >-
+      Resolved 2026-09-26 by RFC 10024. Previously recorded below as
+      "searched for and NOT found in any in-repo document" -- adding it by
+      analogy with X25519MLKEM768 would have been exactly the interpolation
+      data/base_confidence.yaml forbids, so it waited for a citable source.
+
+  - key: SecP384r1MLKEM1024
+    usable: true
+    citation: "docs/sources/IETF_RFC_10024_2026.md -- Abstract"
+    quote: "This document defines three hybrid key agreement mechanisms for TLS 1.3 -- X25519MLKEM768, SecP256r1MLKEM768, and SecP384r1MLKEM1024"
+    note: >-
+      Resolved 2026-09-26 by RFC 10024. Same note as SecP256r1MLKEM768 above.
+
 # Registry spellings of the SAME curve. These are naming identities, not risk
 # claims: they assert only that two strings name one object, which is why they
 # carry `basis: NAMING_IDENTITY` and are kept apart from the `families` rows
@@ -113,7 +130,8 @@ family_aliases:
     citation: "docs/architecture/Pramana_Ledger_Spec.md §6, row 4 ('P-256 ECDHE')"
     quote: "P-256 ECDHE, X=1y"
 
-# Searched for and NOT found (recorded so the next person does not re-search):
-#   - SecP256r1MLKEM768 / SecP384r1MLKEM1024: named in no in-repo document.
-#     Adding them by analogy with X25519MLKEM768 would be exactly the
-#     interpolation data/base_confidence.yaml forbids.
+# Previously "searched for and NOT found" here:
+#   - SecP256r1MLKEM768 / SecP384r1MLKEM1024: were named in no in-repo
+#     document as of 2026-09-23. Resolved 2026-09-26 by RFC 10024
+#     (docs/sources/IETF_RFC_10024_2026.md) -- see the `hybrid_groups` rows
+#     above.

@@ -17,9 +17,20 @@ policies:
     label: "India DST roadmap -- Critical Information Infrastructure"
     applies_to: quantum_vulnerable
     usable: true
-    citation: "docs/sources/India_DST_Quantum_Safe_Roadmap_2026.md -- printed pp. 105-107"
+    citation: "docs/sources/India_DST_Quantum_Safe_Roadmap_2026.md -- printed pp. 36, 105-107"
     quote: "Milestone 3: Full Migration – (CII : 31 December 2029, Enterprises: No later than 31 December 2033)"
     milestones:
+      - key: testing_labs
+        label: "National PQC Testing & Certification Program -- Tier-1/Tier-2 labs operational"
+        # National infrastructure, not a per-row migration deadline: a CII
+        # asset row cannot itself meet or miss "labs exist", so this is
+        # programme scope like `foundations` below and is never laid over a
+        # row. "by December 2026" carries no day of its own in the source;
+        # normalized to the month's last day, same convention as the
+        # year-only NIST_IR_8547_IPD dates below.
+        scope: programme
+        date: 2026-12-31
+        quote: "Establish a National PQC Testing & Certification Program under TEC/STQC/BIS, operationalising Tier-1 and Tier-2 labs (As designated in Section 6.0) by December 2026."
       - key: foundations
         label: "Building the foundations (inventory, CBOM requests)"
         # Programme-level: inventory, CBOM requests, pilots. Not something a
@@ -106,3 +117,30 @@ policies:
         label: "No stand-alone quantum-vulnerable public key"
         date: 2035-12-31
         quote: "By 31.12.2035: • The PQC transition for medium-risk use cases has been completed."
+
+  - key: US_EO14412_HVA
+    label: "US EO 14412 -- High Value Assets / high impact federal systems"
+    # Key-prefix "US_" is this registry's jurisdiction convention, same as
+    # IN_ / EU_ / NIST_ above; no schema field was added for it.
+    applies_to: quantum_vulnerable
+    usable: true
+    citation: "docs/sources/US_EO_14412_2026.md -- Sec. 4(b)"
+    quote: "transition all HVAs and high impact systems to use PQC for key establishment by December 31, 2030"
+    note: >-
+      Executive Order 14412, "Securing the Nation Against Advanced
+      Cryptographic Attacks" (signed 2026-06-22). Excludes National Security
+      Systems (Sec. 4(b) preamble). Implemented for agencies by OMB M-26-15,
+      2026-06-24 (docs/sources/US_OMB_M-26-15_2026.md), which restates the
+      same two dates as its migration-plan Phase 3 (key establishment,
+      2028-2030) and Phase 4 (signatures, 2031), and requires the automated
+      cryptographic inventory to populate a CBOM -- no separate dated CBOM
+      milestone is stated in either document, so none is added here.
+    milestones:
+      - key: key_establishment
+        label: "PQC for key establishment"
+        date: 2030-12-31
+        quote: "transition all HVAs and high impact systems to use PQC for key establishment by December 31, 2030"
+      - key: digital_signatures
+        label: "PQC for digital signatures"
+        date: 2031-12-31
+        quote: "transition all HVAs and high impact systems to use PQC for digital signatures by December 31, 2031"

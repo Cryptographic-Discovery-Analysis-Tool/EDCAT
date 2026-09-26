@@ -25,3 +25,22 @@ De-spaced from the PDF text, exact words:
 
 A CBOM becomes a mandated procurement artefact from FY2027–28 — the document
 `export/cyclonedx.py` produces.
+
+## PQC testing-lab infrastructure (printed p. 36, §9.0 Recommendations of the Task Force)
+
+De-spaced from the PDF text, exact words:
+
+- "Establish a National PQC Testing & Certification Program under
+  TEC/STQC/BIS, operationalising Tier-1 and Tier-2 labs (As designated in
+  Section 6.0) by December 2026."
+
+Section 6.0 (printed p. 58) describes the tier model: Tier-1 labs do
+"Level-1 testing" (functional correctness, standards conformance,
+interoperability -- already-designated TEC/BIS labs may be upgraded for
+this role); Tier-2 labs add Level-2 capability or liaise with Tier-1 for it;
+Tier-3 is a later, sovereign-grade tier for CII protection (printed p. 38,
+"Upgrade select labs to Tier-3 sovereign-grade ... by 2033 | CII by 2029").
+Only the Tier-1/Tier-2 December-2026 date is vendored as a policy milestone
+here; Tier-3 has no single stated date of its own (it inherits the
+Long-Term-Actions heading's "By 2033 | CII by 2029" range, already covered
+by the Milestone-3 full-migration dates above).
