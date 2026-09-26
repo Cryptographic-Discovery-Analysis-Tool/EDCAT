@@ -255,13 +255,161 @@ def test_tls_without_vantage_is_a_usage_error():
     ) == 2
 
 
-def test_tls_live_is_not_supported_from_the_cli():
-    assert main(
-        [
-            "scan", *COMMON, "--adapter", "tls-endpoint",
-            "--host", "h", "--vantage", "v", "--live",
-        ]
-    ) == 2
+# --- tls-endpoint --live (DEV-004 + DEV-013 openssl-only path) -----------------
+#
+# No real subprocess or network is touched: `subprocess.run` inside
+# adapters/tls/adapter.py is monkeypatched to a fake that dispatches on argv
+# and returns the exact bytes of a real recorded openssl invocation from
+# tests/fixtures/recorded/openssl/3.5.4/hybrid_groups_probe/ (see that
+# directory's README.md for the real commands these were captured from) --
+# so the CLI wiring, the runner's argv construction, and the parser are all
+# exercised together, the way a real `--live` invocation would use them,
+# without ever shelling out for real (CLAUDE.md: "no network in tests").
+
+_GROUP_PROBE_DIR = (
+    FIXTURES / "openssl" / "3.5.4" / "hybrid_groups_probe"
+)
+_OPENSSL_VERSION_35 = (_GROUP_PROBE_DIR / "openssl_version.txt").read_text(encoding="utf-8")
+_OPENSSL_VERSION_TOO_OLD = "OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024)\n"
+
+
+def _hybrid_recording(name: str) -> str:
+    return (_GROUP_PROBE_DIR / "hybrid_server" / f"probe_{name}.txt").read_text(encoding="utf-8")
+
+
+def _refused_recording() -> str:
+    # Any recorded refusal works as a stand-in for a group this fixture set
+    # never individually recorded (the pre-standardisation draft group) --
+    # the CLI-wiring tests below don't assert on that one field's value.
+    return (_GROUP_PROBE_DIR / "hybrid_server" / "probe_secp256r1.txt").read_text(encoding="utf-8")
+
+
+def _install_fake_openssl(monkeypatch, *, version_text: str | None, missing: bool = False):
+    """Monkeypatch `subprocess.run` inside the TLS adapter module so every
+    `openssl` invocation the live runner makes is answered from a real
+    recording instead of a live process. `version_text=None` or
+    `missing=True` simulates a binary that cannot be started at all."""
+    import subprocess as _subprocess
+
+    from ecdat.adapters.tls import adapter as tls_adapter_module
+
+    class _FakeCompleted:
+        def __init__(self, stdout: str, returncode: int = 0) -> None:
+            self.stdout = stdout
+            self.stderr = ""
+            self.returncode = returncode
+
+    def fake_run(argv, **kwargs):
+        if missing:
+            raise FileNotFoundError(f"no such file: {argv[0]}")
+        if "version" in argv:
+            if version_text is None:
+                raise FileNotFoundError(f"no such file: {argv[0]}")
+            return _FakeCompleted(version_text)
+        if "-groups" not in argv:
+            return _FakeCompleted(_hybrid_recording("full_offer"))
+        group_arg = argv[argv.index("-groups") + 1]
+        if ":" in group_arg:
+            # classical-only control probe (DEV-004): several groups offered
+            # at once -- the hybrid server still accepts plain X25519.
+            return _FakeCompleted(_hybrid_recording("X25519"))
+        try:
+            return _FakeCompleted(_hybrid_recording(group_arg))
+        except OSError:
+            return _FakeCompleted(_refused_recording())
+
+    monkeypatch.setattr(tls_adapter_module.subprocess, "run", fake_run)
+    assert tls_adapter_module.subprocess is _subprocess  # sanity: same module object
+
+
+_LIVE_TLS_ARGV = [
+    "--adapter", "tls-endpoint",
+    "--host", "127.0.0.1",
+    "--port", "14443",
+    "--vantage", "test:fake-openssl",
+    "--consent",
+    "--live",
+]
+
+
+def test_tls_live_scan_wiring_produces_hybrid_findings(monkeypatch, tmp_path, capsys):
+    _install_fake_openssl(monkeypatch, version_text=_OPENSSL_VERSION_35)
+    document = _run(_LIVE_TLS_ARGV, tmp_path / "out.json", capsys)
+
+    assert document["adapter_id"] == "tls-endpoint"
+    assert document["outcome"] == "completed"
+    (finding,) = document["findings"]
+    by_field = {f["field"]: f for f in finding["fields"]}
+
+    assert by_field["negotiated_group"]["value"] == "X25519MLKEM768"
+    assert by_field["negotiated_group"]["epistemic_state"] == "KNOWN"
+    assert by_field["classical_still_accepted"]["value"] is True
+    assert by_field["hybrid_kex_supported"]["value"] is True
+    assert by_field["hybrid_kex_supported"]["epistemic_state"] == "KNOWN"
+    assert "X25519MLKEM768" in by_field["hybrid_kex_accepted_groups"]["value"]
+    assert by_field["group_accepted_X25519MLKEM768"]["value"] is True
+
+    # sslyze was never invoked by the live path -- its fields stay absent,
+    # never guessed, and the gap is stated in words.
+    assert "der_sha256" not in by_field
+    assert "supported_curves" not in by_field
+    assert any("sslyze: not run" in s for s in document["coverage"]["skipped"])
+
+
+def test_tls_live_reports_unknown_when_openssl_is_too_old(monkeypatch, tmp_path, capsys):
+    """Below MIN_OPENSSL_VERSION the live runner refuses to probe anything at
+    all (the all-or-nothing gate `live_tls_probe_runner` documents) -- no
+    finding is produced, coverage.skipped says why, and the visibility entry
+    names the version it actually found. Never a guessed/assumed capability."""
+    _install_fake_openssl(monkeypatch, version_text=_OPENSSL_VERSION_TOO_OLD)
+    document = _run(_LIVE_TLS_ARGV, tmp_path / "out.json", capsys)
+
+    assert document["outcome"] == "completed"
+    assert document["findings"] == []
+    assert any(
+        "requires openssl >=" in s for s in document["coverage"]["skipped"]
+    )
+    detail = document["visibility"][0]["detail"]
+    assert "3.0.13" in detail
+    assert "requires openssl >=" in detail
+
+
+def test_tls_live_reports_unknown_when_openssl_is_missing(monkeypatch, tmp_path, capsys):
+    _install_fake_openssl(monkeypatch, version_text=None, missing=True)
+    document = _run(_LIVE_TLS_ARGV, tmp_path / "out.json", capsys)
+
+    assert document["outcome"] == "completed"
+    assert document["findings"] == []
+    detail = document["visibility"][0]["detail"]
+    assert "could not be started" in detail
+    assert "ECDAT_OPENSSL_BIN" in detail
+
+
+def test_tls_live_honours_explicit_openssl_bin(monkeypatch, tmp_path, capsys):
+    """--openssl-bin threads through to the argv the live runner shells out
+    with, exactly like the other --live adapters' own configurable-path
+    flags (e.g. --rules-path, --pkcs11-module)."""
+    seen_argv: list[list[str]] = []
+    _install_fake_openssl(monkeypatch, version_text=_OPENSSL_VERSION_35)
+
+    from ecdat.adapters.tls import adapter as tls_adapter_module
+
+    real_fake_run = tls_adapter_module.subprocess.run
+
+    def recording_run(argv, **kwargs):
+        seen_argv.append(argv)
+        return real_fake_run(argv, **kwargs)
+
+    monkeypatch.setattr(tls_adapter_module.subprocess, "run", recording_run)
+
+    document = _run(
+        [*_LIVE_TLS_ARGV, "--openssl-bin", "/opt/openssl-3.5/bin/openssl"],
+        tmp_path / "out.json",
+        capsys,
+    )
+    assert document["outcome"] == "completed"
+    assert seen_argv, "the fake subprocess was never invoked"
+    assert all(argv[0] == "/opt/openssl-3.5/bin/openssl" for argv in seen_argv)
 
 
 # --- live-mode argument requirements (no real subprocess touched) --------------

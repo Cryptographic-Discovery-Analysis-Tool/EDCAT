@@ -514,20 +514,24 @@ def migration_evidence_from(
     )
 
 
-# --- live invocation: the group-probe path (DEV-013) ------------------------
+# --- live invocation: the openssl-only path (DEV-004 + DEV-013) -------------
 #
 # CLAUDE.md: "Every adapter MUST be able to invoke its tool (subprocess) on a
 # real target path, with pinned flags, per-target timeout, and network
 # egress disabled [as a deployment control]." Before DEV-013 the TLS
-# adapter had no live path at all -- `cli.py::_build_tls` refuses `--live`
-# outright and points at `tools/prober/` instead, because sslyze's own live
-# wiring (the AGPL-3.0 separate-process boundary in spec §3) is a larger,
-# still-open piece of work this change does not attempt. What follows is
-# scoped to exactly what DEV-013 adds: the individual `openssl s_client`
-# group probes, real subprocess and all, mirroring the injection pattern
-# `hsm.adapter.live_probe_runner` already established (small dataclass of
-# raw text is the seam; a factory builds a callable that shells out; tests
-# never call the factory, only the pure argv builders and the parser).
+# adapter had no live path at all. `live_group_probe_runner` below closed
+# that gap for exactly the per-group probes; `live_tls_probe_runner`
+# (following it) composes it with DEV-004's full-offer and classical-only
+# probes into one `--live` path `cli.py::_build_tls` now wires up. Neither
+# function ever touches sslyze -- its live wiring (the AGPL-3.0
+# separate-process boundary in spec §3) is a larger, still-open piece of
+# work this module does not attempt; a live scan through this path reports
+# every sslyze-sourced field (curve enumeration, `der_sha256`, ...) as
+# absent/UNKNOWN with an honest coverage note, never a guess. What follows
+# mirrors the injection pattern `hsm.adapter.live_probe_runner` already
+# established (small dataclass of raw text is the seam; a factory builds a
+# callable that shells out; tests never call the factory, only the pure
+# argv builders and the parser).
 
 #: Env var naming an `openssl` binary to use instead of bare `openssl` on
 #: PATH -- the exact "configurable path/env var" the background for this
@@ -578,6 +582,41 @@ def build_group_probe_argv(
         f"{host}:{port}",
         "-groups",
         group,
+        "-brief",
+    ]
+    if sni:
+        argv += ["-servername", sni]
+    return argv
+
+
+def build_negotiated_argv(
+    openssl_bin: str, *, host: str, port: int, sni: str | None = None
+) -> list[str]:
+    """The pinned argv for DEV-004's full-offer probe: no `-groups`
+    restriction at all, so the result is whatever this `openssl` binary's own
+    default group list negotiates -- the endpoint's PREFERENCE, not its full
+    acceptance set (that is what the per-group probes above are for)."""
+    argv = [openssl_bin, "s_client", "-connect", f"{host}:{port}", "-brief"]
+    if sni:
+        argv += ["-servername", sni]
+    return argv
+
+
+def build_classical_only_argv(
+    openssl_bin: str, *, host: str, port: int, groups: tuple[str, ...], sni: str | None = None
+) -> list[str]:
+    """The pinned argv for DEV-004's classical-only control probe: the client
+    offers ONLY `groups` (ordinarily `classical_control_groups()`), so a
+    completed handshake proves classical key establishment is still accepted
+    regardless of what the full-offer probe happens to prefer (§5.7 -- this
+    is what makes a migration falsifiable)."""
+    argv = [
+        openssl_bin,
+        "s_client",
+        "-connect",
+        f"{host}:{port}",
+        "-groups",
+        ":".join(groups),
         "-brief",
     ]
     if sni:
@@ -692,6 +731,110 @@ def live_group_probe_runner(
             texts[group] = _run(argv, timeout_seconds=timeout_seconds, allow_nonzero=True)
 
         return TlsProbeBundle(
+            group_probe_texts=texts,
+            group_probe_openssl_version=version_text.strip() if version_text else None,
+        )
+
+    return _run_probes
+
+
+def live_tls_probe_runner(
+    *,
+    openssl_bin: str | None = None,
+    groups: tuple[str, ...] | None = None,
+    classical_groups: tuple[str, ...] | None = None,
+    timeout_seconds: int = DEFAULT_GROUP_PROBE_TIMEOUT_SECONDS,
+) -> Callable[[ScanTarget], TlsProbeBundle]:
+    """Build a callable that shells out for real and returns a full
+    `TlsProbeBundle` from `openssl` alone: DEV-004's full-offer
+    (`negotiated_text`) and classical-only (`classical_only_text`) probes,
+    plus DEV-013's per-group probes -- everything this adapter can answer
+    without sslyze. `sslyze_json` is never populated here: sslyze's own live
+    wiring is a separate, larger piece of work (the AGPL-3.0 separate-process
+    boundary, spec §3) this function does not attempt (see `cli.py::
+    _build_tls`'s module-level note). The adapter itself already treats a
+    bundle with no `sslyze_json` correctly -- `sslyze`-sourced fields
+    (`supported_curves`, `der_sha256`, `leaf_subject`, ...) are simply never
+    populated and stay at their default UNKNOWN/absent state, and the
+    visibility entry says why in words (`NASSL_CEILING_NOTE` covers only the
+    hybrid-group ceiling; the coverage/skipped list separately states
+    "sslyze: not run for this target" whenever `sslyze_json` is absent).
+
+    One `openssl version` gate covers all three probe shapes together: below
+    `MIN_OPENSSL_VERSION`, or if the binary cannot be started at all, nothing
+    is probed and the bundle carries only `group_probe_unavailable_reason`
+    -- never a partial live view where some fields are freshly observed and
+    others are silently stale. (The full-offer and classical-only probes
+    would technically still produce a real, all-classical answer on an older
+    `openssl`, but that binary already failed the one check this module can
+    perform on it -- reporting its version -- so treating it as unusable for
+    every probe shape is the conservative reading, matching
+    `live_group_probe_runner`'s own all-or-nothing gate.)
+    """
+    resolved_bin = resolve_openssl_bin(openssl_bin=openssl_bin)
+    probe_groups = groups if groups is not None else default_group_probe_list()
+    control_groups = (
+        classical_groups if classical_groups is not None else classical_control_groups()
+    )
+
+    def _run_probes(target: ScanTarget) -> TlsProbeBundle:
+        if target.probe is None:
+            raise AdapterContractError(
+                "live_tls_probe_runner requires a ScanTarget with a ProbeTargetIdentity"
+            )
+        probe = target.probe
+        version_text = probe_openssl_version(openssl_bin=resolved_bin, timeout_seconds=timeout_seconds)
+        if version_text is None:
+            return TlsProbeBundle(
+                group_probe_unavailable_reason=(
+                    f"{resolved_bin!r} could not be started; no live TLS probe of any kind is "
+                    f"possible (set {OPENSSL_BIN_ENV_VAR} to a working binary's path)"
+                ),
+            )
+        if not meets_min_openssl_version(version_text):
+            found = version_text.strip() if version_text else "not found"
+            major, minor, patch = MIN_OPENSSL_VERSION
+            return TlsProbeBundle(
+                group_probe_unavailable_reason=(
+                    f"{resolved_bin!r} reports {found!r}; the live TLS probe requires "
+                    f"openssl >= {major}.{minor}.{patch} to negotiate a hybrid group at all "
+                    f"(set {OPENSSL_BIN_ENV_VAR} to a newer binary's path)"
+                ),
+            )
+
+        negotiated_text = _run(
+            build_negotiated_argv(
+                resolved_bin, host=probe.requested_host, port=probe.port, sni=probe.sni_sent
+            ),
+            timeout_seconds=timeout_seconds,
+            allow_nonzero=True,
+        )
+        classical_only_text = _run(
+            build_classical_only_argv(
+                resolved_bin,
+                host=probe.requested_host,
+                port=probe.port,
+                groups=control_groups,
+                sni=probe.sni_sent,
+            ),
+            timeout_seconds=timeout_seconds,
+            allow_nonzero=True,
+        )
+
+        texts: dict[str, str] = {}
+        for group in probe_groups:
+            argv = build_group_probe_argv(
+                resolved_bin,
+                host=probe.requested_host,
+                port=probe.port,
+                group=group,
+                sni=probe.sni_sent,
+            )
+            texts[group] = _run(argv, timeout_seconds=timeout_seconds, allow_nonzero=True)
+
+        return TlsProbeBundle(
+            negotiated_text=negotiated_text,
+            classical_only_text=classical_only_text,
             group_probe_texts=texts,
             group_probe_openssl_version=version_text.strip() if version_text else None,
         )

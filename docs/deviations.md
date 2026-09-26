@@ -357,3 +357,67 @@ HYBRID_KEX -- two different claims, two different citations, per CLAUDE.md's per
 discipline. `src/ecdat/data/crypto_families.py` gains `is_deprecated_hybrid_group`,
 `hybrid_group_codepoint`, and `classical_control_groups`, all following `is_hybrid_group`'s
 existing "no usable row -> False/None, never guessed" contract.
+
+## DEV-013 follow-up — `tls-endpoint --live` wired into the CLI, openssl-only (2026-09-26)
+
+**Issue.** DEV-013 itself left `cli.py::_build_tls` refusing `--live` outright ("Scope not
+attempted"): `live_group_probe_runner` was a real, working live path for the per-group probes but
+was not yet a `BUILDERS` entry, and DEV-004's full-offer/classical-only probes had no live argv
+builders at all. CLAUDE.md's workflow rule ("a phase is done only when `ecdat scan` runs LIVE on
+the Tier A target directory") and its adapter-contract rule ("every adapter MUST be able to invoke
+its tool on a real target path") both name a gap this closes: `tls-endpoint` was the only one of
+the nine adapters with no `--live` path reachable from the command line at all.
+
+**Resolution.** `adapters/tls/adapter.py` gains `build_negotiated_argv` (DEV-004's full-offer
+probe, no `-groups` restriction) and `build_classical_only_argv` (DEV-004's classical-only control
+probe, offering exactly `classical_control_groups()`), and `live_tls_probe_runner`, a factory that
+composes both with the existing per-group probe loop behind one `openssl version` gate: below
+`MIN_OPENSSL_VERSION` (3.5.0), or if the binary cannot even be started, **no probe of any kind
+runs** — the bundle carries only `group_probe_unavailable_reason` and the adapter reports
+`hybrid_kex_supported` UNKNOWN with a visibility note naming what was actually found (the version
+string, or "could not be started"). This is a deliberately more conservative gate than strictly
+necessary — the full-offer and classical-only probes would produce a real, all-classical answer on
+an older `openssl` too — chosen because a binary that already failed the one check this module can
+perform on it (reporting its own version) is not one this module should trust for anything else
+either, and it keeps exactly one code path to reason about instead of two.
+
+`cli.py::_build_tls` now dispatches `--live` to `live_tls_probe_runner(openssl_bin=args.openssl_bin)`
+instead of raising `CliUsageError`; a new `--openssl-bin` flag (default: `ECDAT_OPENSSL_BIN` env
+var, else `PATH`) threads through exactly like `--rules-path`/`--pkcs11-module` do for their own
+`--live` adapters. **sslyze is deliberately not wired live** — its own live invocation is the
+AGPL-3.0 separate-process boundary DEV-004's own text already scoped as separate work (spec §3),
+and that work remains untouched here. A live scan through this path therefore never populates
+`sslyze_json`; every sslyze-sourced Finding field (`supported_curves`, `der_sha256`, `leaf_subject`,
+the per-protocol `accepted_*` cipher-suite lists) stays absent rather than guessed, and
+`coverage.skipped` states `"sslyze: not run for this target"` on every live run — the adapter
+already handled a bundle with no `sslyze_json` correctly before this change (replay mode omits it
+routinely), so no adapter-side change was needed for this half of the honesty requirement.
+
+**Verification.** 6 new CLI-level tests in `tests/unit/test_cli.py` monkeypatch
+`ecdat.adapters.tls.adapter.subprocess.run` to replay real recordings from
+`tests/fixtures/recorded/openssl/3.5.4/hybrid_groups_probe/` (no network, no real subprocess) and
+drive the whole path through `main()`: live wiring produces the expected hybrid findings and
+`coverage.skipped` names sslyze as not run; an openssl reporting `3.0.13` (too old) and an openssl
+that cannot be started at all both produce zero findings with `hybrid_kex_supported` UNKNOWN and a
+visibility note naming the reason; `--openssl-bin` is asserted to be argv[0] of every subprocess
+call made. `python -m pytest -q` is 0 failures (639 passed, 1 skipped, up from 636 passed before
+this session — 6 new tests added, 1 stale test asserting `--live` was refused removed) and every
+`tools/ci/check_*.py` passes.
+
+Manually verified live against real processes (report only, not a test, per CLAUDE.md's
+"replay of a recorded file ... is for tests and scoring only" rule): a throwaway self-signed
+EC P-256 certificate (`openssl req -x509 ...`, discarded after use, never committed) plus a real
+`openssl s_server` (OpenSSL 3.5.4, `-groups X25519MLKEM768:X25519`) on `127.0.0.1:15443`, scanned
+with `ecdat scan --adapter tls-endpoint --live --host 127.0.0.1 --port 15443 --vantage
+local:manual-check --consent`, produced `negotiated_group=X25519MLKEM768`,
+`hybrid_kex_supported=True`, `classical_still_accepted=True`, all `KNOWN`, with `coverage.scanned`
+listing all three real `openssl s_client` invocations. The same command against the real
+`cloudflare.com:443` over the live network produced `negotiated_group=X25519MLKEM768` and accepted
+`secp256r1` individually as well (3 of 6 probed groups accepted) — an independently-observed public
+endpoint already negotiating ML-KEM hybrid key exchange, not a fixture.
+
+**Scope still not attempted.** sslyze's own live wiring. A live `tls-endpoint` scan today is
+openssl-only by design; a reader who wants the certificate chain, cipher-suite enumeration, or
+`der_sha256` cross-surface correlation from a live TLS scan still needs either replay mode fed a
+real recorded sslyze document, or `tools/prober/`'s coordinated vantage. Filed as the same
+still-open item DEV-013 already named, not a new one.

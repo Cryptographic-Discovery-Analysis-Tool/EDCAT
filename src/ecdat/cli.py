@@ -17,10 +17,26 @@ pass `--live` to actually shell out to that tool with its pinned flags, or
 omit it to replay pre-recorded raw output through the same parser instead
 (CLAUDE.md: "Replay of a recorded file (--input) is for tests and scoring
 only") -- this is exactly what every one of those adapters' own unit tests
-already do, just driven from argv instead of from Python. `tls-endpoint` has
-no `--live` path here yet: its live probe needs two coordinated tools from a
-declared vantage (`tools/prober/`), which is a deliberately separate
-concern from this single-process CLI, not an oversight.
+already do, just driven from argv instead of from Python. `tls-endpoint
+--live` shells out to `openssl` only (DEV-004's full-offer/classical-only
+probes plus DEV-013's per-group probes); sslyze's own live wiring is a
+separate, larger, still-open piece of work (see the note above this
+docstring's `correlate` section) -- `tools/prober/` remains the reference
+for a coordinated sslyze+openssl vantage this single-process CLI does not
+attempt to replicate.
+
+`tls-endpoint --live` (DEV-004 + DEV-013) runs the openssl-only probes for
+real: the full-offer and classical-only `s_client` handshakes and one
+per-group `s_client` handshake per named group in `data/crypto_families.yaml`
+-- see `adapters/tls/adapter.py::live_tls_probe_runner`. It never invokes
+sslyze: sslyze's own live wiring (the AGPL-3.0 separate-process boundary,
+spec §3) is a separate, larger piece of work this CLI does not attempt, so a
+live TLS scan reports every sslyze-sourced field (curve enumeration,
+`der_sha256`, `leaf_subject`, ...) as absent/UNKNOWN, with the coverage list
+and visibility entry saying in words that sslyze was not run for that scan --
+never a silent gap. Replay mode (`--sslyze-input` / `--negotiated-input` /
+`--classical-only-input`) is unaffected and still accepts a recorded sslyze
+document when one is available.
 
 `correlate` runs several `scan`-shaped specs from one JSON plan file, in one
 process, and feeds every resulting `AdapterRunResult` straight into
@@ -57,6 +73,7 @@ from ecdat.adapters.packages.adapter import PackagesAdapter, TrivyScanBundle
 from ecdat.adapters.packages.adapter import live_scan_runner as live_packages_runner
 from ecdat.adapters.source.semgrep import SemgrepSourceAdapter
 from ecdat.adapters.tls.adapter import TlsEndpointAdapter, TlsProbeBundle
+from ecdat.adapters.tls.adapter import live_tls_probe_runner
 from ecdat.correlation.engine import CorrelationReport, ForbiddenEdgeError, correlate
 from ecdat.correlation.graph import EvidenceGraph, build_graph
 from ecdat.model.evidence import ConfidenceBasis
@@ -311,30 +328,34 @@ def _build_binary(args: argparse.Namespace, basis: ConfidenceBasis) -> tuple[Ada
 
 
 def _build_tls(args: argparse.Namespace, basis: ConfidenceBasis) -> tuple[Adapter, ScanTarget]:
-    if args.live:
-        raise CliUsageError(
-            "tls-endpoint has no CLI-driven --live probe yet -- it needs sslyze and an "
-            "openssl s_client probe coordinated from a declared vantage; see tools/prober/ "
-            "for the existing live invocation path instead"
-        )
     if not (args.host and args.vantage):
         raise CliUsageError(
             "tls-endpoint requires --host and --vantage: probe identity is recorded, never "
             "assumed (Lock §5 row 1 / CLAUDE.md)"
         )
-    if not (args.sslyze_input or args.negotiated_input or args.classical_only_input):
-        raise CliUsageError(
-            "tls-endpoint replay mode requires at least one of --sslyze-input / "
-            "--negotiated-input / --classical-only-input"
+    if args.live:
+        # openssl only (DEV-004 full-offer/classical-only + DEV-013 per-group
+        # probes) -- sslyze's own live wiring is separate, larger, still-open
+        # work (module docstring above; docs/deviations.md DEV-013 "Scope not
+        # attempted"). The adapter itself handles a bundle with no
+        # sslyze_json correctly: those fields simply stay absent/UNKNOWN and
+        # the coverage list records "sslyze: not run for this target".
+        runner = live_tls_probe_runner(openssl_bin=args.openssl_bin)
+    else:
+        if not (args.sslyze_input or args.negotiated_input or args.classical_only_input):
+            raise CliUsageError(
+                "tls-endpoint replay mode requires at least one of --sslyze-input / "
+                "--negotiated-input / --classical-only-input (or pass --live to run "
+                "the openssl probes for real)"
+            )
+        bundle = TlsProbeBundle(
+            sslyze_json=_read_optional_path(args.sslyze_input),
+            negotiated_text=_read_optional_path(args.negotiated_input),
+            classical_only_text=_read_optional_path(args.classical_only_input),
         )
-    bundle = TlsProbeBundle(
-        sslyze_json=_read_optional_path(args.sslyze_input),
-        negotiated_text=_read_optional_path(args.negotiated_input),
-        classical_only_text=_read_optional_path(args.classical_only_input),
-    )
 
-    def runner(target: ScanTarget, _bundle: TlsProbeBundle = bundle) -> TlsProbeBundle:
-        return _bundle
+        def runner(target: ScanTarget, _bundle: TlsProbeBundle = bundle) -> TlsProbeBundle:
+            return _bundle
 
     probe = ProbeTargetIdentity(
         requested_host=args.host, port=args.port or 443, sni_sent=args.sni, probe_vantage=args.vantage
@@ -513,6 +534,7 @@ _PLAN_ENTRY_DEFAULTS: dict[str, Any] = {
     "sni": None,
     "vantage": None,
     "consent": False,
+    "openssl_bin": None,
     "sslyze_input": None,
     "negotiated_input": None,
     "classical_only_input": None,
@@ -945,8 +967,9 @@ def main(argv: list[str] | None = None) -> int:
     scan.add_argument(
         "--live",
         action="store_true",
-        help="packages-trivy / images-cbomkit-theia / hsm-pkcs11 / binary-yara-readelf only: "
-        "actually shell out to the real tool instead of replaying --input",
+        help="packages-trivy / images-cbomkit-theia / hsm-pkcs11 / binary-yara-readelf / "
+        "tls-endpoint only: actually shell out to the real tool instead of replaying --input "
+        "(tls-endpoint --live is openssl only -- see --openssl-bin and this module's docstring)",
     )
 
     # config-chain-spring
@@ -1036,6 +1059,14 @@ def main(argv: list[str] | None = None) -> int:
         "--consent",
         action="store_true",
         help="tls-endpoint only: consent to probe this target (required by ScanTarget itself)",
+    )
+    scan.add_argument(
+        "--openssl-bin",
+        help="tls-endpoint --live only: path to the openssl binary to shell out to (default: "
+        "ECDAT_OPENSSL_BIN env var, else bare 'openssl' on PATH -- never the interpreter's own "
+        "linked OpenSSL, see adapters/tls/adapter.py::resolve_openssl_bin). Must be >= 3.5.0 to "
+        "negotiate a hybrid group at all; below that, or if it cannot be started, every hybrid "
+        "field is reported UNKNOWN with a visibility note naming what was found.",
     )
     scan.add_argument("--sslyze-input", help="tls-endpoint replay mode: recorded sslyze JSON output")
     scan.add_argument(
