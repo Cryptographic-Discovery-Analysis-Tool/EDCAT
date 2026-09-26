@@ -86,11 +86,25 @@ families:
       Table 4 lists finite-field DH as quantum-vulnerable at every strength.
 
 # Groups negotiated on the wire that are hybrid key establishment.
+#
+# `codepoint` and `deprecated` are cited separately from `citation`/`quote`
+# (which classify the group as HYBRID_KEX per Pramana_Ledger_Spec.md §5.1):
+# they come from docs/sources/IANA_TLS_SupportedGroups_2026.md, the IANA TLS
+# Supported Groups registry, added 2026-09-26 for OI-016/OI-017's resolution
+# (DEV-013: individual per-group probing). A row with `deprecated: true` is
+# still `usable: true` for HYBRID_KEX classification (it IS a hybrid key
+# exchange, negotiated on the wire, same as any other) -- `deprecated` only
+# tells the adapter to attach a visibility note, never to withhold the
+# classification itself.
 hybrid_groups:
   - key: X25519MLKEM768
     usable: true
     citation: "docs/architecture/Pramana_Ledger_Spec.md §5.1"
     quote: "negotiated `X25519MLKEM768` -> HYBRID_KEX (Observed)"
+    codepoint: "0x11EC"
+    codepoint_citation: "docs/sources/IANA_TLS_SupportedGroups_2026.md -- Rows table, value 4588"
+    codepoint_quote: "4588 (`0x11EC`) | X25519MLKEM768 | Y | Y | [RFC 10024]"
+    deprecated: false
 
   - key: SecP256r1MLKEM768
     usable: true
@@ -101,6 +115,10 @@ hybrid_groups:
       "searched for and NOT found in any in-repo document" -- adding it by
       analogy with X25519MLKEM768 would have been exactly the interpolation
       data/base_confidence.yaml forbids, so it waited for a citable source.
+    codepoint: "0x11EB"
+    codepoint_citation: "docs/sources/IANA_TLS_SupportedGroups_2026.md -- Rows table, value 4587"
+    codepoint_quote: "4587 (`0x11EB`) | SecP256r1MLKEM768 | Y | N | [RFC 10024]"
+    deprecated: false
 
   - key: SecP384r1MLKEM1024
     usable: true
@@ -108,6 +126,32 @@ hybrid_groups:
     quote: "This document defines three hybrid key agreement mechanisms for TLS 1.3 -- X25519MLKEM768, SecP256r1MLKEM768, and SecP384r1MLKEM1024"
     note: >-
       Resolved 2026-09-26 by RFC 10024. Same note as SecP256r1MLKEM768 above.
+    codepoint: "0x11ED"
+    codepoint_citation: "docs/sources/IANA_TLS_SupportedGroups_2026.md -- Rows table, value 4589"
+    codepoint_quote: "4589 (`0x11ED`) | SecP384r1MLKEM1024 | Y | N | [RFC 10024]"
+    deprecated: false
+
+  - key: X25519Kyber768Draft00
+    usable: true
+    citation: "docs/architecture/Pramana_Ledger_Spec.md §5.1"
+    quote: "negotiated `X25519MLKEM768` -> HYBRID_KEX (Observed)"
+    note: >-
+      Same rule as X25519MLKEM768 above -- §5.1 classifies ANY negotiated
+      hybrid group as HYBRID_KEX (Observed); it names X25519MLKEM768 as the
+      example, not as an exclusive list. This is still a real hybrid
+      (ECDH + Kyber768) key exchange when observed on the wire, so it is not
+      withheld from `hybrid_groups()` -- only flagged `deprecated` so the
+      adapter can say, in words, that it predates standardisation and was
+      obsoleted. Added 2026-09-26 for OI-016/OI-017 (DEV-013): a legacy
+      endpoint that still negotiates this draft group is migration evidence
+      of a DIFFERENT, worse kind than one negotiating a standardised group,
+      and the ledger should not conflate the two silently.
+    codepoint: "0x6399"
+    codepoint_citation: "docs/sources/IANA_TLS_SupportedGroups_2026.md -- Rows table, value 25497"
+    codepoint_quote: "25497 (`0x6399`) | X25519Kyber768Draft00 (OBSOLETE) | Y | D | [draft-tls-westerbaan-xyber768d00-02][RFC 10024] -- \"Pre-standards version of Kyber768. Obsoleted by [RFC 10024].\""
+    deprecated: true
+    deprecated_citation: "docs/sources/IANA_TLS_SupportedGroups_2026.md -- Rows table, value 25497"
+    deprecated_quote: "Pre-standards version of Kyber768. Obsoleted by [RFC 10024]."
 
 # Registry spellings of the SAME curve. These are naming identities, not risk
 # claims: they assert only that two strings name one object, which is why they

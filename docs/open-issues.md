@@ -596,6 +596,18 @@ a harness fix. If the accidental hybrid is left in place, it should be
 promoted to a deliberate, documented Tier A property — it is a better test
 asset than the classical-only endpoint the harness thought it had.
 
+**Update 2026-09-26 (DEV-013):** this entry's own decision is still open --
+unchanged by this note, and out of this session's scope (the harness
+compose/build files are owned elsewhere). What DEV-013 adds is a sharper
+instrument for whichever way the decision goes: the adapter can now probe
+`X25519MLKEM768`, `SecP256r1MLKEM768` and `SecP384r1MLKEM1024` individually
+against Tier A and report ACCEPTANCE of each, not only which one is
+preferred -- so if `haproxy.cfg` is later given an explicit TLS 1.3 group
+list, the same probe path that measured the accidental hybrid here can also
+confirm exactly which groups a deliberate configuration change actually
+took effect for, group by group, rather than re-reading one preferred group
+per test.
+
 ---
 
 ## OI-017 — sslyze 6.2.0 cannot see a hybrid PQ group. §9 VERIFY 1 answered: NO (2026-09-19)
@@ -639,6 +651,22 @@ thing the whole ledger exists to track.
 
 **Resolution:** the TLS adapter runs two probes. See DEV-004.
 
+**Update 2026-09-26 (DEV-013):** the two DEV-004 probes still only ever
+report ONE negotiated group per handshake -- the endpoint's *preference*
+when everything is offered. That leaves a related question this entry never
+asked open: does the endpoint *accept* a hybrid group other than the one it
+prefers (e.g. `SecP256r1MLKEM768`, RFC 10024's second standardised group),
+which the full-offer probe would never reveal on an endpoint that always
+prefers `X25519MLKEM768` when both are on the table. DEV-013 adds a third
+probe shape -- one `openssl s_client -groups <GROUP> -brief` per named group,
+offering ONLY that group -- so acceptance of each hybrid group (and a
+classical control set) is answered individually, version-gated on
+`openssl >= 3.5` (below that, or if the binary is missing, the new fields
+report UNKNOWN with a visibility note, never a guess). Recordings:
+`tests/fixtures/recorded/openssl/3.5.4/hybrid_groups_probe/`. This does not
+reopen the ANSWERED status above -- sslyze's ceiling is unchanged and still
+exactly as measured -- it only extends what the openssl-side probe answers.
+
 **Not attempted:** whether a later sslyze/nassl adds ML-KEM. When one does,
 the second probe can be dropped and `NASSL_KEY_TYPES` in
 `adapters/tls/parser.py` re-recorded from the new library.
@@ -652,3 +680,15 @@ runtime — but no Lock or harness §14–16 section names this rule, so it cann
 `rules/registry.py` per CLAUDE.md's anti-hallucination rule ("do not add a rule_id from memory").
 **Not attempted:** searching for a future spec revision that might name it. When one does,
 register the rule_id and route the field through `model.field_value.derive()`.
+
+## OI-019 — harness PKI was regenerated with fresh random keys, staling recorded fixtures (2026-09-26) — RESOLVED
+
+`ecdat-harness/harness/build/generate-pki.sh` minted new random keys on every run, so any
+regeneration silently invalidated every fixture here that records those certificates' bytes
+(`topo_x3_der_hash_equality/`, `e4_seclevel_tier_a_certs/`, `sslyze/6.2.0/tier_a_edge_lb.raw.json`);
+`test_engine.py::test_the_wire_certificate_and_the_on_disk_certificate_are_the_same_object`
+failed after one such regeneration. **Resolution:** the harness PKI is now deterministic (fixed
+seed, serials, validity, RFC 6979 ECDSA nonces — see the harness README "Deterministic PKI"), and
+the affected fixtures were re-recorded with real OpenSSL 3.5.4 / sslyze 6.2.0 against a local
+`openssl s_server` mirroring `targets/payments/edge-lb/haproxy.cfg`. OI-014 (host OpenSSL
+version drift) is unaffected.

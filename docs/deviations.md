@@ -271,3 +271,89 @@ own R-DERIVE enforcement path the way a registered-rule_id derivation is. If bui
 work is later folded into a canonical architecture doc with a named rule for
 `provider_pluggable`'s downgrade, register that rule_id in `rules/registry.py` and route
 `provider_pluggable` through `derive()` at that point — filed as OI-018 alongside this entry.
+
+## DEV-013 — the TLS adapter adds a third probe shape: one `openssl s_client` per named group (2026-09-26)
+
+**Issue.** DEV-004 already runs two probes beyond sslyze -- a full-offer `s_client` handshake and
+a classical-only one -- because §7.1 P4 needs the negotiated group and sslyze/nassl cannot report
+one at all (OI-017). Both of those still answer only "what does this endpoint PREFER when
+everything is offered at once": exactly one group per handshake. OI-016/OI-017 close on that
+basis, but neither answers "does this endpoint also ACCEPT SecP256r1MLKEM768", a genuinely
+different question a client offering only that one group is needed to answer, and a server that
+always prefers X25519MLKEM768 when both are offered would never reveal it either way through the
+existing two probes.
+
+**Evidence.** RFC 10024 (`docs/sources/IETF_RFC_10024_2026.md`) names three standardised hybrid
+groups, not one; `data/crypto_families.yaml`'s `hybrid_groups` table already cited all three
+before this change. OpenSSL 3.5.4 (this machine's `openssl` CLI; Python's own linked OpenSSL is
+3.0.18, confirmed via `ssl.OPENSSL_VERSION` -- a different, older library, which is why this
+adapter shells out to a separately-resolved `openssl` binary rather than anything Python links)
+negotiates each of the three when offered alone (`-groups <GROUP>`), and refuses a group it was
+not configured with (`SSL alert number 40`, measured against a local `s_server`) -- see
+`tests/fixtures/recorded/openssl/3.5.4/hybrid_groups_probe/README.md` for the exact commands and
+the real recordings. OpenSSL added ML-KEM hybrid group support in the 3.5 series; below it,
+`-groups X25519MLKEM768` fails to build a ClientHello at all (`Call to SSL_CONF_cmd(-groups,
+X25519MLKEM768) failed`), so the group-probe path must know, at runtime, whether the `openssl`
+binary it is about to shell out to is new enough -- never assume so.
+
+**Resolution.** `TlsProbeBundle` gains `group_probe_texts` (one `-groups <G> -brief` recording per
+group), `group_probe_openssl_version`, and `group_probe_unavailable_reason`.
+`adapters/tls/parser.py::parse_group_probe` parses one recording and decides `accepted` by
+comparing the reported group against the one offered, through a caller-supplied `canonicalize`
+hook rather than exact string match -- OpenSSL reports a classical group back under its OWN
+spelling (`prime256v1`) even when offered under the registry's alias spelling (`secp256r1`), and
+without canonicalisation that looks like a refusal it is not (recorded:
+`classical_server/probe_secp256r1.txt`). The adapter passes `data.crypto_families.canonical_family`
+as that hook, so the resolution is the same naming-identity table the rest of the codebase already
+cites, not a second one invented here. `adapters/tls/adapter.py::live_group_probe_runner` shells
+out for real: it runs `openssl version` once, gates on `MIN_OPENSSL_VERSION = (3, 5, 0)` via
+`parser.meets_min_openssl_version`, and only then runs one `s_client` invocation per group in
+`default_group_probe_list()` (every cited hybrid group, standardised and deprecated alike, plus a
+small classical control set -- all sourced from `data/crypto_families.yaml`, never hardcoded
+literals). Below the minimum version, or if the binary cannot be started, no group is probed and
+the bundle carries `group_probe_unavailable_reason` instead; the adapter reports
+`hybrid_kex_supported` as UNKNOWN with a visibility note naming what was actually found, never a
+silent skip and never an assumed capability. The binary is resolved from an explicit argument,
+else `ECDAT_OPENSSL_BIN`, else bare `openssl` on PATH -- configurable, per the background this
+change was scoped against.
+
+No new `rule_id` was registered. Every new Finding field (`group_accepted_<GROUP>`,
+`hybrid_kex_supported`, `hybrid_kex_accepted_groups`, `hybrid_kex_deprecated_groups_accepted`,
+`group_codepoint_<GROUP>`) is emitted `KNOWN` directly from its own probe's evidence via
+`_known()`/`_known_multi()`, exactly as the existing `der_sha256`/`negotiated_group` fields already
+are -- none of them sets `derived_from`, so `FieldValue`'s R-DERIVE validator never requires a
+`rule_id` for them (Lock §3: only a field with `derived_from` set needs one). Classifying an
+accepted hybrid group as `HYBRID_KEX` still goes through the existing, already-registered
+`FUNC-TLS-HYBRID-001` (`function/classifier.py::classify_handshake`, Pramana_Ledger_Spec.md §5.1,
+"negotiated hybrid group observed -> HYBRID_KEX") -- that rule is general over ANY negotiated
+hybrid group, not specific to the full-offer probe, so it needed no change and no sibling.
+
+**The deprecated draft group.** `X25519Kyber768Draft00` (IANA codepoint `0x6399`, obsoleted by RFC
+10024 per `docs/sources/IANA_TLS_SupportedGroups_2026.md`, retrieved 2026-09-26) is still included
+in `data/crypto_families.yaml`'s `hybrid_groups` table and still classifies as `HYBRID_KEX` when
+observed -- §5.1 names X25519MLKEM768 as an example of "negotiated hybrid group", not as an
+exclusive list, and a legacy endpoint that still negotiates this draft group really is doing
+hybrid PQ key exchange, just not on the standard track. It is flagged `deprecated: true` so the
+adapter can say so, in words, in both a dedicated Finding field
+(`hybrid_kex_deprecated_groups_accepted`) and the visibility entry, never silently folded into an
+undifferentiated "hybrid supported" claim. No live OpenSSL on the recording machine implements
+this pre-standardisation group as a named `-groups` value at all (`Call to SSL_CONF_cmd(-groups,
+X25519Kyber768Draft00) failed`), so its test uses one hand-authored `Negotiated TLS1.3 group:`
+line (the same shape the real recordings establish, group name substituted) rather than a
+recording -- documented at the test site (`tests/unit/adapters/test_tls_group_probe.py`), never
+presented as a live capture.
+
+**Scope not attempted.** `cli.py::_build_tls` still refuses `--live` for the adapter as a whole
+(it predates this change, pointing at `tools/prober/` instead) -- that gap is sslyze's own live
+wiring, a separate, larger piece of work (the AGPL-3.0 separate-process boundary, spec §3), and
+this change does not attempt it. `live_group_probe_runner` is a real, working live path for
+exactly the group-probe piece and can be wired into the CLI once the sslyze half is; until then it
+is reachable programmatically and is not yet a `BUILDERS` entry in `cli.py`.
+
+**Impact.** `data/crypto_families.yaml`'s `hybrid_groups` rows gain `codepoint`/`deprecated`
+fields, each independently cited (`docs/sources/IANA_TLS_SupportedGroups_2026.md`, added this
+session) rather than reusing the existing `citation`/`quote` pair that classifies the group as
+HYBRID_KEX -- two different claims, two different citations, per CLAUDE.md's per-field citation
+discipline. `src/ecdat/data/crypto_families.py` gains `is_deprecated_hybrid_group`,
+`hybrid_group_codepoint`, and `classical_control_groups`, all following `is_hybrid_group`'s
+existing "no usable row -> False/None, never guessed" contract.

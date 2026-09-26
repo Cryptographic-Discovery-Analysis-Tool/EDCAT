@@ -1,0 +1,13 @@
+Connecting to 127.0.0.1
+Can't use SSL_get_servername
+depth=0 CN=ecdat-fixture-gen.test
+verify error:num=18:self-signed certificate
+CONNECTION ESTABLISHED
+Protocol version: TLSv1.3
+Ciphersuite: TLS_AES_256_GCM_SHA384
+Peer certificate: CN=ecdat-fixture-gen.test
+Hash used: SHA256
+Signature type: ecdsa_secp256r1_sha256
+Verification error: self-signed certificate
+Peer Temp Key: ECDH, prime256v1, 256 bits
+DONE

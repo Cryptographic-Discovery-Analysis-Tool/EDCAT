@@ -48,6 +48,51 @@ def is_hybrid_group(group: str | None) -> bool:
     return group is not None and group in hybrid_groups()
 
 
+def _hybrid_group_row(group: str) -> dict[str, Any] | None:
+    for row in load().get("hybrid_groups") or ():
+        if row.get("key") == group and row.get("usable") is True:
+            return row
+    return None
+
+
+def is_deprecated_hybrid_group(group: str | None) -> bool:
+    """True only for a hybrid group whose registry row is cited as
+    deprecated (data/crypto_families.yaml, e.g. the pre-standardisation
+    X25519Kyber768Draft00). False for an unlisted or non-deprecated group --
+    never guessed from the name."""
+    if group is None:
+        return False
+    row = _hybrid_group_row(group)
+    return bool(row and row.get("deprecated") is True)
+
+
+def hybrid_group_codepoint(group: str | None) -> str | None:
+    """The IANA TLS Supported Groups codepoint cited for this group, or None
+    when the group has no usable row (never inferred from the name)."""
+    if group is None:
+        return None
+    row = _hybrid_group_row(group)
+    return row.get("codepoint") if row else None
+
+
+def classical_control_groups() -> tuple[str, ...]:
+    """A small classical-group control set, spelled exactly as the wire
+    reports them, read off rows this registry already cites -- so a caller
+    that wants "a couple of classical groups to probe alongside the hybrid
+    ones" (adapters/tls/adapter.py's group-probe path) never hardcodes a
+    group name that isn't already a cited row here. Not exhaustive: just
+    enough to show the same probe path also confirms an ordinary classical
+    group when one is expected to work."""
+    names: list[str] = []
+    for row in families():
+        if row.get("usable") is True and row.get("key") == "X25519":
+            names.append(row["key"])
+    for row in load().get("family_aliases") or ():
+        if row.get("usable") is True and row.get("key") == "secp256r1":
+            names.append(row["key"])
+    return tuple(names)
+
+
 def is_shor_broken(family: str) -> bool:
     """True/False only for a cited, usable row. Raises otherwise."""
     for row in families():

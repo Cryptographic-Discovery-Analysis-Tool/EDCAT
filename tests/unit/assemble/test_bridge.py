@@ -60,6 +60,34 @@ def _tls(*, classical: bool = True, negotiated: bool = True):
     return adapter.run(ScanTarget(target_id="edge", locator="172.18.0.3:8443", consent=True, probe=probe))
 
 
+GROUP_PROBE_DIR = F / "openssl" / "3.5.4" / "hybrid_groups_probe" / "hybrid_server"
+GROUP_PROBE_VERSION = (
+    F / "openssl" / "3.5.4" / "hybrid_groups_probe" / "openssl_version.txt"
+).read_text(encoding="utf-8")
+
+
+def _tls_with_group_probe(groups: tuple[str, ...]):
+    """Same recorded Tier A full-offer/classical-only probes as `_tls()`,
+    plus real DEV-013 individual-group recordings from the throwaway local
+    hybrid-enabled `s_server` (a different, unrelated endpoint from the
+    Tier A one -- only the group-probe fields from this bundle are under
+    test here, not cross-endpoint consistency)."""
+    probe = ProbeTargetIdentity(
+        requested_host="172.18.0.3", port=8443, sni_sent="pay-edge", probe_vantage="docker:payments-internal"
+    )
+    bundle = TlsProbeBundle(
+        sslyze_json=(F / "sslyze/6.2.0/tier_a_edge_lb.raw.json").read_text(encoding="utf-8"),
+        negotiated_text=(F / "openssl/3.5.8/tier_a_edge_lb.negotiated.txt").read_text(encoding="utf-8"),
+        classical_only_text=(F / "openssl/3.5.8/tier_a_edge_lb.classical_only.txt").read_text(encoding="utf-8"),
+        group_probe_texts={
+            g: (GROUP_PROBE_DIR / f"probe_{g}.txt").read_text(encoding="utf-8") for g in groups
+        },
+        group_probe_openssl_version=GROUP_PROBE_VERSION,
+    )
+    adapter = TlsEndpointAdapter(base_confidence=0.95, confidence_basis=BASIS, probe_runner=lambda t: bundle)
+    return adapter.run(ScanTarget(target_id="edge", locator="172.18.0.3:8443", consent=True, probe=probe))
+
+
 def _source():
     adapter = SemgrepSourceAdapter(base_confidence=0.5, confidence_basis=BASIS)
     path = F / "semgrep/1.99.0/ecdat-rules/tier-a-java.raw.json"
@@ -150,6 +178,43 @@ def test_migration_evidence_rides_on_kex_rows_only():
     assembly = assemble([_tls()])
     assert all(len(s.migrations) == 1 for s in _by_suffix(assembly, "|kex"))
     assert all(s.migrations == () for s in _by_suffix(assembly, "|auth"))
+
+
+# --- DEV-013: individual group-probe subjects --------------------------------
+
+
+def test_an_accepted_hybrid_group_other_than_the_preferred_one_gets_its_own_subject():
+    """The Tier A full-offer probe prefers X25519MLKEM768; the group-probe
+    fixture also shows SecP256r1MLKEM768 individually accepted. That is
+    migration evidence the full-offer probe alone would never produce, and
+    the recommendation engine / ledger must see it as its own row."""
+    assembly = assemble([_tls_with_group_probe(("X25519MLKEM768", "SecP256r1MLKEM768"))])
+    rows = _by_suffix(assembly, "|group-probe-SecP256r1MLKEM768")
+    assert len(rows) == 1
+    assert rows[0].usage_context.function.value == CryptoFunction.HYBRID_KEX
+    assert rows[0].usage_context.function.state == EpistemicState.KNOWN
+    assert len(rows[0].migrations) == 1
+    assert rows[0].migrations[0].negotiated_group == "SecP256r1MLKEM768"
+
+
+def test_the_preferred_group_is_not_duplicated_as_a_group_probe_subject():
+    """X25519MLKEM768 is both the full-offer preference AND individually
+    accepted -- it must appear once (the main |kex row), not twice."""
+    assembly = assemble([_tls_with_group_probe(("X25519MLKEM768",))])
+    assert _by_suffix(assembly, "|group-probe-X25519MLKEM768") == []
+    assert len(_by_suffix(assembly, "|kex")) == 1
+
+
+def test_a_refused_group_produces_no_group_probe_subject():
+    """secp256r1 was refused by the fixture's hybrid server (it was not in
+    that server's -groups list) -- refused is not migration evidence."""
+    assembly = assemble([_tls_with_group_probe(("X25519MLKEM768", "secp256r1"))])
+    assert _by_suffix(assembly, "|group-probe-secp256r1") == []
+
+
+def test_no_group_probe_bundle_produces_no_group_probe_subjects_at_all():
+    assembly = assemble([_tls()])
+    assert [s for s in assembly.subjects if "group-probe" in s.usage_context.usage_context_id] == []
 
 
 # --- declarations -------------------------------------------------------------

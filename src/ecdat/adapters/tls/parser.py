@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from ecdat.adapters.certs.parser import CertificateParseError, load_pem_or_der
 
@@ -55,10 +55,27 @@ class TlsProbeParseError(ValueError):
 _PROTOCOL = re.compile(r"^Protocol version:\s*(?P<v>\S+)", re.MULTILINE)
 _SUITE = re.compile(r"^Ciphersuite:\s*(?P<v>\S+)", re.MULTILINE)
 _GROUP = re.compile(r"^Negotiated TLS1\.3 group:\s*(?P<v>\S+)", re.MULTILINE)
-_TEMP_KEY = re.compile(r"^Peer Temp Key:\s*(?P<v>[^,\n]+)", re.MULTILINE)
+_TEMP_KEY = re.compile(r"^Peer Temp Key:\s*(?P<v>.+)$", re.MULTILINE)
 _PEER_CERT = re.compile(r"^Peer certificate:\s*(?P<v>.+)$", re.MULTILINE)
 _SIG_TYPE = re.compile(r"^Signature type:\s*(?P<v>\S+)", re.MULTILINE)
 _ESTABLISHED = re.compile(r"^CONNECTION ESTABLISHED", re.MULTILINE)
+
+#: `Peer Temp Key:` reports a classical group in two different shapes
+#: (recorded live, both real): `X25519, 253 bits` (the curve name comes
+#: first) and `ECDH, prime256v1, 256 bits` (a generic kind token comes
+#: first, the curve name is the SECOND comma-separated field). Taking
+#: everything before the first comma -- what this parser did before
+#: DEV-013 -- silently turned the second shape into the group name "ECDH",
+#: which is not a group. Recorded: tests/fixtures/recorded/openssl/3.5.4/
+#: hybrid_groups_probe/classical_server/probe_secp256r1.txt.
+_GENERIC_TEMP_KEY_KINDS = frozenset({"ECDH", "DH"})
+
+
+def _parse_temp_key(raw: str) -> str:
+    parts = [p.strip() for p in raw.strip().split(",")]
+    if len(parts) >= 2 and parts[0].upper() in _GENERIC_TEMP_KEY_KINDS:
+        return parts[1]
+    return parts[0]
 
 
 @dataclass(frozen=True)
@@ -98,7 +115,7 @@ def parse_negotiated(text: str) -> NegotiatedHandshake:
     if (match := _GROUP.search(text)) is not None:
         group, group_source = match.group("v"), "Negotiated TLS1.3 group"
     elif (match := _TEMP_KEY.search(text)) is not None:
-        group, group_source = match.group("v").strip(), "Peer Temp Key"
+        group, group_source = _parse_temp_key(match.group("v")), "Peer Temp Key"
 
     def first(pattern):
         found = pattern.search(text)
@@ -247,3 +264,121 @@ def sslyze_can_see_group(group: str) -> bool:
     nothing whatever about the ones it does not.
     """
     return group.upper().replace("-", "_") in {k.upper() for k in NASSL_KEY_TYPES}
+
+
+# --- individual group probes (OI-016/OI-017 resolution; DEV-013) ------------
+#
+# sslyze's curve enumeration (`elliptic_curves`) and DEV-004's single
+# full-offer `openssl s_client` probe both answer a narrower question than
+# "which hybrid groups does this endpoint accept": the full-offer probe
+# reports only the ONE group the endpoint negotiates when everything is
+# offered at once -- its PREFERENCE, not its full acceptance set. An
+# endpoint offered X25519MLKEM768, SecP256r1MLKEM768 and X25519 together
+# might always pick X25519MLKEM768, which says nothing about whether it
+# would also accept SecP256r1MLKEM768 if that were the only hybrid group a
+# client offered. Answering that takes one probe PER group, each offering
+# only that single named group (`openssl s_client -groups <GROUP>`); see
+# tests/fixtures/recorded/openssl/3.5.4/hybrid_groups_probe/README.md for
+# the exact commands and the real recordings this was checked against.
+
+
+class GroupProbeResult:
+    """One individual-group probe's outcome: was `group` the ONLY thing
+    offered, and did the endpoint accept it?
+
+    `accepted` is only ever True when the handshake established AND the
+    negotiated/temp-key group name reported back is the SAME group that was
+    offered -- never inferred from `established` alone, since a refused
+    handshake and a handshake that fell back to some other group would both
+    otherwise look like "it worked"."""
+
+    __slots__ = ("group", "accepted", "handshake")
+
+    def __init__(self, group: str, accepted: bool, handshake: "NegotiatedHandshake") -> None:
+        self.group = group
+        self.accepted = accepted
+        self.handshake = handshake
+
+
+def parse_group_probe(
+    group: str,
+    text: str,
+    *,
+    canonicalize: Callable[[str | None], str | None] | None = None,
+) -> GroupProbeResult:
+    """Parse one `openssl s_client -groups <group> -brief` recording.
+
+    Reuses `parse_negotiated` -- the line shapes are identical to the
+    full-offer and classical-only probes DEV-004 already parses; only the
+    calling convention (one group offered, not several) differs. A refused
+    handshake (`SSL alert number 40`, connection reset, etc.) is not empty
+    output, so this never raises `TlsProbeParseError` for the "refused"
+    case -- only for genuinely empty text, exactly like `parse_negotiated`.
+
+    `canonicalize` resolves a registry naming-identity alias (e.g. OpenSSL
+    reports back `prime256v1` for a group offered as `secp256r1` -- same
+    curve, different spelling; recorded live:
+    tests/fixtures/recorded/openssl/3.5.4/hybrid_groups_probe/
+    classical_server/probe_secp256r1.txt) before comparing what was
+    negotiated against what was asked for. This module never imports
+    `data/crypto_families.yaml` itself (module docstring: "resolved against
+    data/crypto_families.yaml by the caller, never guessed here") --
+    `canonicalize` is the caller's hook to supply that resolution;
+    uncanonicalized (exact-string) comparison is the default so this
+    function has no hard dependency on the data layer.
+    """
+    handshake = parse_negotiated(text)
+    resolve = canonicalize or (lambda name: name)
+    accepted = (
+        handshake.established
+        and handshake.group is not None
+        and (
+            str(resolve(handshake.group)).strip().upper()
+            == str(resolve(group)).strip().upper()
+        )
+    )
+    return GroupProbeResult(group=group, accepted=accepted, handshake=handshake)
+
+
+# --- openssl version gating (background: Python's linked OpenSSL is often
+# older than the system `openssl` binary; sslyze/nassl's own OpenSSL is what
+# OI-017 shows cannot see a hybrid group at all, and even a modern-enough
+# `openssl` CLI predating 3.5 cannot negotiate one either) -------------------
+
+#: The minimum `openssl` CLI version that can negotiate a hybrid group at
+#: all. OpenSSL added ML-KEM hybrid group support in the 3.5 series; below
+#: it, `-groups X25519MLKEM768` fails to even construct the ClientHello
+#: (measured: `Call to SSL_CONF_cmd(-groups, ...) failed` against an older
+#: build). Below this version there is nothing to probe, and reporting a
+#: negotiated group anyway -- or silently skipping the probe with no
+#: explanation -- would both be worse than saying so.
+MIN_OPENSSL_VERSION: tuple[int, int, int] = (3, 5, 0)
+
+_VERSION_LINE = re.compile(r"^OpenSSL\s+(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)", re.MULTILINE)
+
+
+def parse_openssl_version(version_text: str) -> tuple[int, int, int] | None:
+    """Parse `openssl version`'s stdout into a (major, minor, patch) tuple.
+
+    Returns None for text this parser does not recognise (a truncated or
+    unexpected banner) rather than guessing -- the caller must treat that
+    exactly like "binary not found": UNKNOWN, never assumed new enough.
+    """
+    match = _VERSION_LINE.search(version_text)
+    if match is None:
+        return None
+    return (int(match.group("major")), int(match.group("minor")), int(match.group("patch")))
+
+
+def meets_min_openssl_version(
+    version_text: str | None, *, minimum: tuple[int, int, int] = MIN_OPENSSL_VERSION
+) -> bool:
+    """Whether this `openssl version` output names a binary new enough to
+    negotiate a hybrid group. False for unparsed or missing text -- never a
+    guess in the permissive direction."""
+    if not version_text:
+        return False
+    parsed = parse_openssl_version(version_text)
+    if parsed is None:
+        return False
+    return parsed >= minimum
